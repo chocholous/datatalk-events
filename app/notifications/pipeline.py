@@ -15,6 +15,16 @@ from app.scraper import Scraper
 log = logging.getLogger(__name__)
 
 
+def _parse_date(value: str | None) -> datetime | None:
+    """Parse an ISO date/datetime string, returning None on failure."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except (ValueError, TypeError):
+        return None
+
+
 async def run_scrape_and_notify(session: Session) -> None:
     run = ScrapeRun(status=ScrapeRunStatus.RUNNING)
     session.add(run)
@@ -57,6 +67,8 @@ async def run_scrape_and_notify(session: Session) -> None:
                 external_id=event_id,
                 title=e.get("title", ""),
                 url=url,
+                date=_parse_date(e.get("date")),
+                end_date=_parse_date(e.get("end_date")),
                 location=e.get("location"),
                 description=e.get("description"),
                 topics=json.dumps(e.get("topics", [])),

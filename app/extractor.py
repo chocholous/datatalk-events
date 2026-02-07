@@ -48,8 +48,8 @@ Return ONLY valid JSON array, no markdown."""
     async def extract(self, events: list[dict]) -> list[dict]:
         settings = get_settings()
         if not settings.openai_api_key:
-            log.warning("OpenAI API key not set, returning raw events")
-            return events
+            log.warning("OpenAI API key not set, using fallback extraction from structured data")
+            return [self._extract_from_structured_data(e) for e in events]
 
         # Format enriched payload for LLM
         formatted = []
@@ -90,3 +90,79 @@ Return ONLY valid JSON array, no markdown."""
                 content = content.split("\n", 1)[1].rsplit("```", 1)[0]
 
             return json.loads(content)
+
+    def _extract_from_structured_data(self, event: dict) -> dict:
+        """Fallback: extract fields from JSON-LD and OpenGraph when no LLM is available."""
+        json_ld = event.get("json_ld") or {}
+        og = event.get("og_meta") or {}
+
+        # Location from JSON-LD
+        location = None
+        ld_location = json_ld.get("location")
+        if isinstance(ld_location, dict):
+            location = ld_location.get("name") or ld_location.get("address")
+            if isinstance(location, dict):
+                location = location.get("addressLocality")
+        elif isinstance(ld_location, str):
+            location = ld_location
+
+        # Organizer from JSON-LD
+        organizer = None
+        ld_organizer = json_ld.get("organizer")
+        if isinstance(ld_organizer, dict):
+            organizer = ld_organizer.get("name")
+        elif isinstance(ld_organizer, str):
+            organizer = ld_organizer
+
+        # Speakers/performers from JSON-LD
+        speakers = []
+        for key in ("performer", "performers"):
+            performers = json_ld.get(key)
+            if performers:
+                if isinstance(performers, list):
+                    for p in performers:
+                        if isinstance(p, dict):
+                            name = p.get("name")
+                            if name:
+                                speakers.append(name)
+                        elif isinstance(p, str):
+                            speakers.append(p)
+                elif isinstance(performers, dict):
+                    name = performers.get("name")
+                    if name:
+                        speakers.append(name)
+
+        # Image from OG meta or JSON-LD
+        image_url = og.get("og:image")
+        if not image_url:
+            ld_image = json_ld.get("image")
+            if isinstance(ld_image, str):
+                image_url = ld_image
+            elif isinstance(ld_image, dict):
+                image_url = ld_image.get("url")
+            elif isinstance(ld_image, list) and ld_image:
+                first = ld_image[0]
+                image_url = first if isinstance(first, str) else first.get("url") if isinstance(first, dict) else None
+
+        # Description from OG meta or JSON-LD
+        description = (
+            og.get("og:description")
+            or json_ld.get("description")
+            or event.get("description")
+        )
+
+        return {
+            "title": json_ld.get("name") or og.get("og:title") or event.get("title", ""),
+            "url": event.get("url", ""),
+            "date": json_ld.get("startDate"),
+            "end_date": json_ld.get("endDate"),
+            "location": location,
+            "topics": [],
+            "type": None,
+            "level": None,
+            "language": None,
+            "description": description,
+            "speakers": speakers,
+            "organizer": organizer,
+            "image_url": image_url,
+        }

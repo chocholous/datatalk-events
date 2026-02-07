@@ -58,16 +58,20 @@ MOCK_OPENAI_RESPONSE = {
 
 class TestExtractor:
     @pytest.mark.anyio
-    async def test_extract_without_api_key(self, monkeypatch):
-        """Without an API key, extractor returns raw events unchanged."""
+    async def test_extract_without_api_key_uses_fallback(self, monkeypatch):
+        """Without an API key, extractor uses fallback extraction from structured data."""
         monkeypatch.setenv("OPENAI_API_KEY", "")
         from app.config import get_settings
 
         get_settings.cache_clear()
         try:
             extractor = EventExtractor()
-            result = await extractor.extract(SAMPLE_EVENTS)
-            assert result == SAMPLE_EVENTS
+            result = await extractor.extract(SAMPLE_ENRICHED_EVENTS)
+            assert len(result) == 1
+            assert result[0]["title"] == "AI Meetup"
+            assert result[0]["url"] == "https://datatalk.cz/event/ai-meetup"
+            assert result[0]["date"] == "2025-03-15"
+            assert result[0]["image_url"] == "https://example.com/img.jpg"
         finally:
             get_settings.cache_clear()
 
@@ -151,3 +155,95 @@ class TestExtractor:
             assert len(result) == 1
         finally:
             get_settings.cache_clear()
+
+
+class TestFallbackExtraction:
+    """Test _extract_from_structured_data fallback method."""
+
+    def test_fallback_extracts_json_ld_fields(self):
+        extractor = EventExtractor()
+        event = {
+            "title": "Raw Title",
+            "url": "https://example.com/event",
+            "json_ld": {
+                "@type": "Event",
+                "name": "JSON-LD Title",
+                "startDate": "2025-06-01T10:00:00",
+                "endDate": "2025-06-01T18:00:00",
+                "location": {"name": "PVA Expo Praha"},
+                "organizer": {"name": "DataTalk"},
+                "description": "Popis z JSON-LD",
+            },
+            "og_meta": {},
+        }
+        result = extractor._extract_from_structured_data(event)
+        assert result["title"] == "JSON-LD Title"
+        assert result["date"] == "2025-06-01T10:00:00"
+        assert result["end_date"] == "2025-06-01T18:00:00"
+        assert result["location"] == "PVA Expo Praha"
+        assert result["organizer"] == "DataTalk"
+        assert result["description"] == "Popis z JSON-LD"
+
+    def test_fallback_extracts_og_meta(self):
+        extractor = EventExtractor()
+        event = {
+            "title": "Raw Title",
+            "url": "https://example.com/event",
+            "json_ld": None,
+            "og_meta": {
+                "og:title": "OG Title",
+                "og:description": "OG popis",
+                "og:image": "https://example.com/og.jpg",
+            },
+        }
+        result = extractor._extract_from_structured_data(event)
+        assert result["title"] == "OG Title"
+        assert result["description"] == "OG popis"
+        assert result["image_url"] == "https://example.com/og.jpg"
+
+    def test_fallback_handles_no_structured_data(self):
+        extractor = EventExtractor()
+        event = {
+            "title": "Basic Event",
+            "url": "https://example.com/basic",
+            "description": "Raw description",
+        }
+        result = extractor._extract_from_structured_data(event)
+        assert result["title"] == "Basic Event"
+        assert result["url"] == "https://example.com/basic"
+        assert result["description"] == "Raw description"
+        assert result["location"] is None
+        assert result["organizer"] is None
+        assert result["speakers"] == []
+        assert result["image_url"] is None
+
+    def test_fallback_extracts_performers_as_speakers(self):
+        extractor = EventExtractor()
+        event = {
+            "title": "Event",
+            "url": "https://example.com/ev",
+            "json_ld": {
+                "performer": [
+                    {"@type": "Person", "name": "Alice"},
+                    {"@type": "Person", "name": "Bob"},
+                ],
+            },
+            "og_meta": {},
+        }
+        result = extractor._extract_from_structured_data(event)
+        assert result["speakers"] == ["Alice", "Bob"]
+
+    def test_fallback_location_address_locality(self):
+        extractor = EventExtractor()
+        event = {
+            "title": "Event",
+            "url": "https://example.com/ev",
+            "json_ld": {
+                "location": {
+                    "address": {"addressLocality": "Praha"},
+                },
+            },
+            "og_meta": {},
+        }
+        result = extractor._extract_from_structured_data(event)
+        assert result["location"] == "Praha"

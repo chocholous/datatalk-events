@@ -1,0 +1,51 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+
+packages:
+  - ca-certificates
+  - curl
+  - git
+
+runcmd:
+  # Install Docker
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+  - systemctl enable docker
+  - systemctl start docker
+  # Clone repo
+  - git clone https://github.com/chocholous/datatalk-events.git /opt/datatalk-events
+  - cd /opt/datatalk-events
+  # Create .env from environment variables passed via deploy.sh
+  - |
+    cat > /opt/datatalk-events/.env << 'ENVEOF'
+    APP_NAME=${APP_NAME:-DataTalk Events}
+    DEBUG=${DEBUG:-false}
+    DATABASE_URL=${DATABASE_URL:-sqlite:///data/app.db}
+    SCRAPE_URL=${SCRAPE_URL:-https://datatalk.cz/kalendar-akci/}
+    SCRAPE_SCHEDULE=${SCRAPE_SCHEDULE:-0 8 * * 1}
+    OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+    EMAIL_PROVIDER=${EMAIL_PROVIDER:-resend}
+    RESEND_API_KEY=${RESEND_API_KEY:-}
+    SENDGRID_API_KEY=${SENDGRID_API_KEY:-}
+    EMAIL_FROM=${EMAIL_FROM:-events@datatalk.cz}
+    TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+    SECRET_KEY=${SECRET_KEY:-}
+    WEBHOOK_URL=${WEBHOOK_URL:-}
+    ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+    ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+    ENVEOF
+  # Start with production profile if domain is set
+  - |
+    cd /opt/datatalk-events
+    if [ -n "${DOMAIN:-}" ]; then
+      sed -i "s/\${DOMAIN}/${DOMAIN}/g" deploy/Caddyfile
+      docker compose --profile production up -d
+    else
+      docker compose up -d
+    fi

@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     webhook_url: str = "http://localhost:8000"
     admin_username: str = "admin"
     admin_password: str = ""
+    scrape_detail_concurrency: int = 5
+    scrape_detail_timeout: int = 15
 
     @field_validator("secret_key")
     @classmethod

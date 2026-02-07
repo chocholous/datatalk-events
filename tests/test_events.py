@@ -1,4 +1,5 @@
 from datetime import datetime
+from unittest.mock import patch
 
 from app.models import Event
 
@@ -54,7 +55,10 @@ class TestGetEventIcal:
 
 class TestTriggerScrape:
     def test_trigger_scrape(self, client) -> None:
-        response = client.post("/scrape")
+        with patch(
+            "app.routers.events.run_scrape_and_notify"
+        ) as mock_pipeline:
+            response = client.post("/scrape")
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True

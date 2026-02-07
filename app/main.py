@@ -9,6 +9,7 @@ from app.config import get_settings
 from app.database import get_engine, init_db
 from app.dependencies import get_db, set_engine
 from app.models import Subscriber  # noqa: F401 — ensure table is registered
+from app.notifications.pipeline import run_scrape_and_notify
 from app.routers import events, subscribers
 from app.scheduler import create_scheduler
 
@@ -16,8 +17,14 @@ log = logging.getLogger(__name__)
 
 
 async def scheduled_scrape() -> None:
-    """Placeholder for scheduled scrape job. Full pipeline comes in Phase 5."""
-    log.info("Scheduled scrape triggered")
+    """Run the full scrape-and-notify pipeline on schedule."""
+    from app.dependencies import _engine
+
+    if _engine is None:
+        log.error("Engine not initialized, skipping scheduled scrape")
+        return
+    with Session(_engine) as session:
+        await run_scrape_and_notify(session)
 
 
 @asynccontextmanager

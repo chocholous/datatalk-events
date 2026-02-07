@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nove eventy</title>
+</head>
+<body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <h1 style="color: #333;">Nove eventy tento tyden</h1>
+    {% for event in events %}
+    <div style="margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 8px;">
+        <h3 style="margin: 0 0 10px 0;">{{ event.title }}</h3>
+        <p style="color: #666; margin: 5px 0;">{{ event.location or "TBD" }}</p>
+        {% if event.description %}
+        <p style="color: #444; margin: 5px 0;">{{ event.description[:200] }}</p>
+        {% endif %}
+        <a href="{{ event.url }}" style="color: #0066cc;">Vice info</a>
+    </div>
+    {% endfor %}
+    <hr style="border: none; border-top: 1px solid #eee; margin-top: 30px;">
+    <p style="color: #999; font-size: 12px;">
+        Tento email byl odeslan z DataTalk Events.
+    </p>
+</body>
+</html>

@@ -13,4 +13,11 @@
     <p>Last scrape: {{ last_scrape or 'Never' }}</p>
     <p>Last notification: {{ last_notification or 'Never' }}</p>
 </div>
+<div class="card">
+    <h3>Manual Scrape</h3>
+    <p>Trigger the scrape-and-notify pipeline manually.</p>
+    <form method="post" action="/admin/scrape" style="margin-top: 0.5rem;">
+        <button type="submit" class="btn btn-primary">Run Scraper Now</button>
+    </form>
+</div>
 {% endblock %}

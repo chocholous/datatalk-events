@@ -1,9 +1,10 @@
 from datetime import datetime
+from unittest.mock import patch
 
 import pytest
-from sqlmodel import Session
+from sqlmodel import Session, select
 
-from app.models import Event, NotificationLog, Subscriber, SubscriberStatus
+from app.models import Event, NotificationLog, ScrapeRun, ScrapeRunStatus, Subscriber, SubscriberStatus
 
 ADMIN_USER = "admin"
 ADMIN_PASS = "testpass123"
@@ -90,3 +91,129 @@ def test_admin_events_list(client, session: Session):
     response = client.get("/admin/events", auth=(ADMIN_USER, ADMIN_PASS))
     assert response.status_code == 200
     assert "Prague Data Meetup" in response.text
+
+
+def test_post_scrape_returns_redirect(client):
+    with patch("app.routers.admin._run_pipeline"):
+        response = client.post(
+            "/admin/scrape",
+            auth=(ADMIN_USER, ADMIN_PASS),
+            follow_redirects=False,
+        )
+    assert response.status_code == 303
+    assert "/admin/" in response.headers["location"]
+    assert "scrape_started" in response.headers["location"]
+
+
+def test_post_subscriber_creates_subscriber(client, session: Session):
+    response = client.post(
+        "/admin/subscribers",
+        data={"email": "new@example.com", "telegram_chat_id": "", "status": "pending"},
+        auth=(ADMIN_USER, ADMIN_PASS),
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert "subscriber_added" in response.headers["location"]
+
+    sub = session.exec(
+        select(Subscriber).where(Subscriber.email == "new@example.com")
+    ).first()
+    assert sub is not None
+    assert sub.status == SubscriberStatus.PENDING
+    assert sub.verified_at is None
+
+
+def test_post_subscriber_verified_sets_verified_at(client, session: Session):
+    response = client.post(
+        "/admin/subscribers",
+        data={"email": "ver@example.com", "telegram_chat_id": "123", "status": "verified"},
+        auth=(ADMIN_USER, ADMIN_PASS),
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    sub = session.exec(
+        select(Subscriber).where(Subscriber.email == "ver@example.com")
+    ).first()
+    assert sub is not None
+    assert sub.status == SubscriberStatus.VERIFIED
+    assert sub.verified_at is not None
+
+
+def test_post_subscriber_duplicate_email_returns_error(client, session: Session):
+    session.add(Subscriber(email="dup@example.com"))
+    session.commit()
+
+    response = client.post(
+        "/admin/subscribers",
+        data={"email": "dup@example.com", "telegram_chat_id": "", "status": "pending"},
+        auth=(ADMIN_USER, ADMIN_PASS),
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert "email_exists" in response.headers["location"]
+
+
+def test_get_runs_returns_200(client, session: Session):
+    run = ScrapeRun(
+        status=ScrapeRunStatus.SUCCESS,
+        events_found=5,
+        events_new=2,
+        finished_at=datetime(2025, 8, 1),
+    )
+    session.add(run)
+    session.commit()
+
+    response = client.get("/admin/runs", auth=(ADMIN_USER, ADMIN_PASS))
+    assert response.status_code == 200
+    assert "success" in response.text
+
+
+def test_get_notifications_returns_200(client, session: Session):
+    sub = Subscriber(email="notif@example.com", status=SubscriberStatus.VERIFIED)
+    session.add(sub)
+    session.commit()
+    session.refresh(sub)
+
+    event = Event(
+        external_id="evt-notif",
+        title="Notif Event",
+        url="https://example.com/notif",
+    )
+    session.add(event)
+    session.commit()
+    session.refresh(event)
+
+    log = NotificationLog(
+        subscriber_id=sub.id,
+        event_id=event.id,
+        channel="email",
+    )
+    session.add(log)
+    session.commit()
+
+    response = client.get("/admin/notifications", auth=(ADMIN_USER, ADMIN_PASS))
+    assert response.status_code == 200
+    assert "notif@example.com" in response.text
+    assert "Notif Event" in response.text
+
+
+def test_nav_contains_runs_and_notifications_links(client):
+    response = client.get("/admin/", auth=(ADMIN_USER, ADMIN_PASS))
+    assert response.status_code == 200
+    assert '/admin/runs' in response.text
+    assert '/admin/notifications' in response.text
+
+
+def test_dashboard_contains_scrape_form(client):
+    response = client.get("/admin/", auth=(ADMIN_USER, ADMIN_PASS))
+    assert response.status_code == 200
+    assert 'action="/admin/scrape"' in response.text
+    assert "Run Scraper Now" in response.text
+
+
+def test_subscribers_page_contains_add_form(client):
+    response = client.get("/admin/subscribers", auth=(ADMIN_USER, ADMIN_PASS))
+    assert response.status_code == 200
+    assert 'action="/admin/subscribers"' in response.text
+    assert "Add Subscriber" in response.text

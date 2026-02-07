@@ -1,14 +1,18 @@
+import asyncio
 import secrets
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, func, select
 
 from app.config import get_settings
 from app.dependencies import get_db
-from app.models import Event, NotificationLog, Subscriber, SubscriberStatus
+from app.models import Event, NotificationLog, ScrapeRun, Subscriber, SubscriberStatus
+from app.notifications.pipeline import run_scrape_and_notify
 
 router = APIRouter(prefix="/admin")
 security = HTTPBasic()
@@ -95,4 +99,84 @@ def events_list(
     events = db.exec(select(Event).order_by(Event.scraped_at.desc())).all()
     return templates.TemplateResponse(
         "events.html", {"request": request, "events": events}
+    )
+
+
+def _run_pipeline(db: Session) -> None:
+    """Run the async pipeline in a new event loop for background tasks."""
+    asyncio.run(run_scrape_and_notify(db))
+
+
+@router.post("/scrape")
+def trigger_scrape(
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+    admin: str = Depends(verify_admin),
+):
+    background.add_task(_run_pipeline, db)
+    return RedirectResponse("/admin/?message=scrape_started", status_code=303)
+
+
+@router.post("/subscribers")
+async def add_subscriber(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: str = Depends(verify_admin),
+):
+    form = await request.form()
+    email = form.get("email", "").strip()
+    if not email:
+        return RedirectResponse("/admin/subscribers?error=email_required", status_code=303)
+
+    telegram_chat_id = form.get("telegram_chat_id", "").strip() or None
+    status_val = form.get("status", "pending")
+
+    subscriber = Subscriber(
+        email=email,
+        telegram_chat_id=telegram_chat_id,
+        status=SubscriberStatus(status_val),
+    )
+    if status_val == "verified":
+        subscriber.verified_at = datetime.utcnow()
+
+    try:
+        db.add(subscriber)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return RedirectResponse("/admin/subscribers?error=email_exists", status_code=303)
+
+    return RedirectResponse("/admin/subscribers?message=subscriber_added", status_code=303)
+
+
+@router.get("/runs", response_class=HTMLResponse)
+def runs_list(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: str = Depends(verify_admin),
+):
+    runs = db.exec(select(ScrapeRun).order_by(ScrapeRun.started_at.desc())).all()
+    return templates.TemplateResponse(
+        "runs.html", {"request": request, "runs": runs}
+    )
+
+
+@router.get("/notifications", response_class=HTMLResponse)
+def notifications_list(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: str = Depends(verify_admin),
+):
+    results = db.exec(
+        select(NotificationLog, Subscriber, Event)
+        .join(Subscriber, NotificationLog.subscriber_id == Subscriber.id)
+        .join(Event, NotificationLog.event_id == Event.id)
+        .order_by(NotificationLog.sent_at.desc())
+    ).all()
+    logs = [
+        {"notification": row[0], "subscriber": row[1], "event": row[2]}
+        for row in results
+    ]
+    return templates.TemplateResponse(
+        "notifications.html", {"request": request, "logs": logs}
     )

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Notifications{% endblock %}
+{% block content %}
+<h1>Notification Logs</h1>
+<div class="card">
+    <table>
+        <thead>
+            <tr><th>Subscriber</th><th>Event</th><th>Channel</th><th>Sent At</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+        {% for entry in logs %}
+        <tr>
+            <td>{{ entry.subscriber.email }}</td>
+            <td>{{ entry.event.title }}</td>
+            <td>{{ entry.notification.channel }}</td>
+            <td>{{ entry.notification.sent_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td><span class="badge badge-{{ entry.notification.status }}">{{ entry.notification.status }}</span></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

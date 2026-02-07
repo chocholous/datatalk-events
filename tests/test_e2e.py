@@ -190,6 +190,51 @@ class TestE2EWorkflow:
         events = r.json()
         assert len(events) > 0, "No events found in /events API after scrape"
 
+    def test_11b_events_have_structured_data(self, client):
+        """Verify at least some events have location, description, event_type."""
+        r = client.get("/events")
+        events = r.json()
+        assert len(events) > 0
+
+        has_location = any(e.get("location") for e in events)
+        has_description = any(e.get("description") for e in events)
+        has_type = any(e.get("event_type") for e in events)
+
+        assert has_location or has_description or has_type, (
+            "No events have structured data (location, description, or event_type). "
+            "Check if LLM extraction is working."
+        )
+
+    def test_11c_events_data_quality(self, client):
+        """Verify data quality: description length, URL validity."""
+        r = client.get("/events")
+        events = r.json()
+        assert len(events) > 0
+
+        for event in events:
+            # Every event must have a valid URL
+            url = event.get("url", "")
+            assert url.startswith("http"), f"Invalid URL: {url}"
+
+            # If description exists, it should be meaningful (> 20 chars)
+            desc = event.get("description")
+            if desc:
+                assert len(desc) > 20, (
+                    f"Description too short for '{event.get('title')}': '{desc}'"
+                )
+
+    def test_11d_events_api_returns_new_fields(self, client):
+        """Verify events API returns speakers, organizer, image_url fields."""
+        r = client.get("/events")
+        events = r.json()
+        assert len(events) > 0
+
+        first = events[0]
+        # These fields should exist in the response (even if null)
+        assert "speakers" in first, "speakers field missing from events API"
+        assert "organizer" in first, "organizer field missing from events API"
+        assert "image_url" in first, "image_url field missing from events API"
+
     def test_12_notifications_sent(self, client, admin_auth):
         """Verify notification logs exist for our subscriber.
 

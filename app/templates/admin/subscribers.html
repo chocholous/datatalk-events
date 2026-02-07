@@ -3,6 +3,27 @@
 {% block content %}
 <h1>Subscribers</h1>
 <div class="card">
+    <h3>Add Subscriber</h3>
+    <form method="post" action="/admin/subscribers">
+        <div class="form-group">
+            <label for="email">Email (required)</label>
+            <input type="email" id="email" name="email" required>
+        </div>
+        <div class="form-group">
+            <label for="telegram_chat_id">Telegram Chat ID (optional)</label>
+            <input type="text" id="telegram_chat_id" name="telegram_chat_id">
+        </div>
+        <div class="form-group">
+            <label for="status">Status</label>
+            <select id="status" name="status">
+                <option value="pending">Pending</option>
+                <option value="verified">Verified</option>
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Add Subscriber</button>
+    </form>
+</div>
+<div class="card">
     <table>
         <thead><tr><th>Email</th><th>Status</th><th>Telegram</th><th>Created</th></tr></thead>
         <tbody>

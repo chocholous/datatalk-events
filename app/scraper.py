@@ -14,16 +14,62 @@ class Scraper:
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
     async def fetch_page(self, url: str) -> str:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
             response = await client.get(url)
             response.raise_for_status()
             return response.text
 
     def parse_events(self, html: str) -> list[dict]:
-        """Parse event cards from HTML. Selectors based on datatalk.cz structure."""
+        """Parse event entries from HTML.
+
+        datatalk.cz/kalendar-akci/ uses <li> elements with <strong><a> for
+        event titles and date/location in parentheses after the link.
+        Falls back to generic card-based selectors for resilience.
+        """
         soup = BeautifulSoup(html, "html.parser")
         events = []
-        # Try multiple selectors for resilience
+
+        # Primary: <li> entries with <strong><a href="...">Title</a></strong>
+        for li in soup.select("li"):
+            strong = li.find("strong")
+            if not strong:
+                continue
+            link_el = strong.find("a", href=True)
+            if not link_el:
+                continue
+
+            url = link_el.get("href", "")
+            title = link_el.get_text(strip=True)
+
+            # Skip navigation links (relative paths to site sections)
+            if not title or (url.startswith("/") and not url.startswith("//")):
+                continue
+
+            if url and not url.startswith("http"):
+                url = f"https://datatalk.cz{url}"
+
+            # Extract date/location from parenthesized text after the link
+            full_text = li.get_text(strip=True)
+            date_text = None
+            # Pattern: "Title(date, location)" — extract what's in parens
+            paren_start = full_text.find("(")
+            paren_end = full_text.find(")")
+            if paren_start != -1 and paren_end != -1:
+                date_text = full_text[paren_start + 1:paren_end]
+
+            events.append(
+                {
+                    "title": title,
+                    "url": url,
+                    "date_text": date_text,
+                    "description": full_text[:500],
+                }
+            )
+
+        if events:
+            return events
+
+        # Fallback: generic card-based selectors
         for card in soup.select(
             ".event-card, .event-item, article, "
             ".tribe-events-calendar-list__event"
@@ -32,14 +78,6 @@ class Scraper:
                 "h2, h3, .tribe-events-calendar-list__event-title, .title"
             )
             link_el = card.select_one("a[href]")
-            date_el = card.select_one(
-                ".date, time, .tribe-events-calendar-list__event-datetime"
-            )
-            desc_el = card.select_one(
-                ".description, "
-                ".tribe-events-calendar-list__event-description, p"
-            )
-
             if title_el and link_el:
                 url = link_el.get("href", "")
                 if url and not url.startswith("http"):
@@ -48,14 +86,8 @@ class Scraper:
                     {
                         "title": title_el.get_text(strip=True),
                         "url": url,
-                        "date_text": (
-                            date_el.get_text(strip=True) if date_el else None
-                        ),
-                        "description": (
-                            desc_el.get_text(strip=True)[:500]
-                            if desc_el
-                            else card.get_text(strip=True)[:500]
-                        ),
+                        "date_text": None,
+                        "description": card.get_text(strip=True)[:500],
                     }
                 )
         return events

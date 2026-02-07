@@ -140,18 +140,26 @@ def test_post_subscriber_verified_sets_verified_at(client, session: Session):
     assert sub.verified_at is not None
 
 
-def test_post_subscriber_duplicate_email_returns_error(client, session: Session):
-    session.add(Subscriber(email="dup@example.com"))
+def test_post_subscriber_duplicate_email_upserts(client, session: Session):
+    session.add(Subscriber(email="dup@example.com", status=SubscriberStatus.PENDING))
     session.commit()
 
     response = client.post(
         "/admin/subscribers",
-        data={"email": "dup@example.com", "telegram_chat_id": "", "status": "pending"},
+        data={"email": "dup@example.com", "telegram_chat_id": "999", "status": "verified"},
         auth=(ADMIN_USER, ADMIN_PASS),
         follow_redirects=False,
     )
     assert response.status_code == 303
-    assert "email_exists" in response.headers["location"]
+    assert "subscriber_updated" in response.headers["location"]
+
+    sub = session.exec(
+        select(Subscriber).where(Subscriber.email == "dup@example.com")
+    ).first()
+    assert sub is not None
+    assert sub.status == SubscriberStatus.VERIFIED
+    assert sub.telegram_chat_id == "999"
+    assert sub.verified_at is not None
 
 
 def test_get_runs_returns_200(client, session: Session):

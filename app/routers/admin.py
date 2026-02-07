@@ -131,6 +131,15 @@ async def add_subscriber(
     telegram_chat_id = form.get("telegram_chat_id", "").strip() or None
     status_val = form.get("status", "pending")
 
+    existing = db.exec(select(Subscriber).where(Subscriber.email == email)).first()
+    if existing:
+        existing.status = SubscriberStatus(status_val)
+        existing.telegram_chat_id = telegram_chat_id
+        if status_val == "verified" and existing.verified_at is None:
+            existing.verified_at = datetime.utcnow()
+        db.commit()
+        return RedirectResponse("/admin/subscribers?message=subscriber_updated", status_code=303)
+
     subscriber = Subscriber(
         email=email,
         telegram_chat_id=telegram_chat_id,
@@ -139,13 +148,8 @@ async def add_subscriber(
     if status_val == "verified":
         subscriber.verified_at = datetime.utcnow()
 
-    try:
-        db.add(subscriber)
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        return RedirectResponse("/admin/subscribers?error=email_exists", status_code=303)
-
+    db.add(subscriber)
+    db.commit()
     return RedirectResponse("/admin/subscribers?message=subscriber_added", status_code=303)
 
 

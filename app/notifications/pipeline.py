@@ -63,6 +63,16 @@ async def run_scrape_and_notify(session: Session) -> None:
         for e in enriched:
             url = e.get("url", "")
             event_id = hashlib.md5(url.encode()).hexdigest()[:16]
+            # Ensure list fields are JSON strings, string fields are strings
+            topics = e.get("topics", [])
+            if not isinstance(topics, list):
+                topics = [topics] if topics else []
+            speakers = e.get("speakers", [])
+            if not isinstance(speakers, list):
+                speakers = [speakers] if speakers else []
+            organizer = e.get("organizer")
+            if isinstance(organizer, list):
+                organizer = ", ".join(str(o) for o in organizer) if organizer else None
             event = Event(
                 external_id=event_id,
                 title=e.get("title", ""),
@@ -71,11 +81,11 @@ async def run_scrape_and_notify(session: Session) -> None:
                 end_date=_parse_date(e.get("end_date")),
                 location=e.get("location"),
                 description=e.get("description"),
-                topics=json.dumps(e.get("topics", [])),
+                topics=json.dumps(topics),
                 event_type=e.get("type"),
                 language=e.get("language"),
-                speakers=json.dumps(e.get("speakers", [])),
-                organizer=e.get("organizer"),
+                speakers=json.dumps(speakers),
+                organizer=organizer,
                 image_url=e.get("image_url"),
             )
             session.add(event)

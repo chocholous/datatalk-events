@@ -24,10 +24,15 @@ Use ALL available sources. JSON-LD is the most reliable for dates, locations,
 and organizers. Use the markdown content to find speakers, detailed descriptions,
 and any info not in structured data.
 
+IMPORTANT: Always include the TIME (not just the date). Look for start/end times
+in JSON-LD (startDate/endDate), in the markdown content, or in the title/description.
+Use full ISO 8601 datetime format like "2026-03-15T18:00:00". If only a date is known
+without a specific time, use T09:00:00 as default start time.
+
 Return a JSON array with objects containing:
 - title: string
-- date: ISO date string or null
-- end_date: ISO date string or null
+- date: ISO 8601 datetime string with time (e.g. "2026-03-15T18:00:00") or null
+- end_date: ISO 8601 datetime string with time or null
 - location: "online" or city name or null
 - topics: array of tags like ["AI", "Data", "Python"]
 - type: "workshop" | "meetup" | "conference" | "webinar"

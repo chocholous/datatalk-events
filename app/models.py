@@ -33,6 +33,9 @@ class Event(SQLModel, table=True):
     topics: str = "[]"  # JSON array
     event_type: str | None = None
     language: str | None = None
+    speakers: str = "[]"  # JSON array of speaker names
+    organizer: str | None = None
+    image_url: str | None = None
     scraped_at: datetime = Field(default_factory=datetime.utcnow)
 
 

@@ -3,8 +3,9 @@ import json
 import logging
 from datetime import datetime
 
-from sqlmodel import Session, select
+from sqlmodel import Session, delete, select
 
+from app.detail_fetcher import DetailFetcher
 from app.extractor import EventExtractor
 from app.models import Event, NotificationLog, ScrapeRun, ScrapeRunStatus, Subscriber, SubscriberStatus
 from app.notifications.email import get_email_sender, make_ics_attachment
@@ -22,9 +23,14 @@ async def run_scrape_and_notify(session: Session) -> None:
 
     try:
         scraper = Scraper()
+        detail_fetcher = DetailFetcher()
         extractor = EventExtractor()
         email_sender = get_email_sender()
         telegram = TelegramNotifier()
+
+        # Delete previous events (fresh start each run)
+        session.exec(delete(Event))
+        session.commit()
 
         # 1. Scrape
         raw_events = await scraper.scrape()
@@ -36,30 +42,32 @@ async def run_scrape_and_notify(session: Session) -> None:
             session.commit()
             return
 
-        # 2. LLM extraction
-        enriched = await extractor.extract(raw_events)
+        # 1.5 Fetch detail pages
+        enriched_raw = await detail_fetcher.fetch_details(raw_events)
 
-        # 3. Save new events (deduplicate by external_id)
+        # 2. LLM extraction
+        enriched = await extractor.extract(enriched_raw)
+
+        # 3. Save events
         new_events: list[Event] = []
         for e in enriched:
             url = e.get("url", "")
             event_id = hashlib.md5(url.encode()).hexdigest()[:16]
-            existing = session.exec(
-                select(Event).where(Event.external_id == event_id)
-            ).first()
-            if not existing:
-                event = Event(
-                    external_id=event_id,
-                    title=e.get("title", ""),
-                    url=url,
-                    location=e.get("location"),
-                    description=e.get("description"),
-                    topics=json.dumps(e.get("topics", [])),
-                    event_type=e.get("type"),
-                    language=e.get("language"),
-                )
-                session.add(event)
-                new_events.append(event)
+            event = Event(
+                external_id=event_id,
+                title=e.get("title", ""),
+                url=url,
+                location=e.get("location"),
+                description=e.get("description"),
+                topics=json.dumps(e.get("topics", [])),
+                event_type=e.get("type"),
+                language=e.get("language"),
+                speakers=json.dumps(e.get("speakers", [])),
+                organizer=e.get("organizer"),
+                image_url=e.get("image_url"),
+            )
+            session.add(event)
+            new_events.append(event)
         session.commit()
 
         run.events_found = len(enriched)
@@ -123,17 +131,33 @@ async def run_scrape_and_notify(session: Session) -> None:
 
 
 def format_event_email(events: list[Event]) -> str:
-    items = "\n".join(
-        f'<div style="margin-bottom:20px;padding:15px;border:1px solid #ddd;border-radius:8px;">'
-        f'<h3 style="margin:0 0 10px 0;">{e.title}</h3>'
-        f'<p style="color:#666;margin:5px 0;">{e.location or "TBD"}</p>'
-        f'<a href="{e.url}" style="color:#0066cc;">Vice info</a>'
-        f"</div>"
-        for e in events
-    )
+    items = []
+    for e in events:
+        speakers_list = json.loads(e.speakers) if e.speakers else []
+        speakers_html = ""
+        if speakers_list:
+            speakers_html = (
+                f'<p style="color:#444;margin:5px 0;font-size:0.9em;">'
+                f'Speakers: {", ".join(speakers_list)}</p>'
+            )
+        desc_html = ""
+        if e.description:
+            desc_html = (
+                f'<p style="color:#555;margin:5px 0;font-size:0.9em;">'
+                f"{e.description}</p>"
+            )
+        items.append(
+            f'<div style="margin-bottom:20px;padding:15px;border:1px solid #ddd;border-radius:8px;">'
+            f'<h3 style="margin:0 0 10px 0;">{e.title}</h3>'
+            f'<p style="color:#666;margin:5px 0;">{e.location or "TBD"}</p>'
+            f"{speakers_html}"
+            f"{desc_html}"
+            f'<a href="{e.url}" style="color:#0066cc;">Vice info</a>'
+            f"</div>"
+        )
     return (
         f'<div style="font-family:sans-serif;max-width:600px;margin:0 auto;">'
         f'<h1 style="color:#333;">Nove eventy tento tyden</h1>'
-        f"{items}"
+        f'{"".join(items)}'
         f"</div>"
     )

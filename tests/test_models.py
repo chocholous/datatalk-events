@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
-from app.models import Event, NotificationLog, Subscriber, SubscriberStatus
+from app.models import Event, NotificationLog, ScrapeRun, ScrapeRunStatus, Subscriber, SubscriberStatus
 
 
 class TestSubscriberCRUD:
@@ -114,6 +114,22 @@ class TestNotificationLogCRUD:
         assert log.channel == "email"
         assert log.status == "sent"
         assert isinstance(log.sent_at, datetime)
+
+
+class TestScrapeRunCRUD:
+    def test_create_scrape_run_defaults(self, session) -> None:
+        run = ScrapeRun()
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+
+        assert run.id is not None
+        assert run.status == ScrapeRunStatus.RUNNING
+        assert run.events_found == 0
+        assert run.events_new == 0
+        assert run.finished_at is None
+        assert run.error_message is None
+        assert isinstance(run.started_at, datetime)
 
 
 class TestUniqueConstraints:

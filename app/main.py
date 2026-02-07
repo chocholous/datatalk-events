@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 from app.config import get_settings
 from app.database import get_engine, init_db
 from app.dependencies import get_db, set_engine
-from app.models import Subscriber  # noqa: F401 — ensure table is registered
+from app.models import Subscriber, ScrapeRun  # noqa: F401 — ensure tables are registered
 from app.notifications.pipeline import run_scrape_and_notify
 from app.routers import admin, events, subscribers
 from app.scheduler import create_scheduler

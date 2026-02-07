@@ -36,6 +36,22 @@ class Event(SQLModel, table=True):
     scraped_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class ScrapeRunStatus(StrEnum):
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
+class ScrapeRun(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    started_at: datetime = Field(default_factory=datetime.utcnow)
+    finished_at: datetime | None = None
+    status: ScrapeRunStatus = ScrapeRunStatus.RUNNING
+    events_found: int = 0
+    events_new: int = 0
+    error_message: str | None = None
+
+
 class NotificationLog(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     subscriber_id: int = Field(foreign_key="subscriber.id")

@@ -4,7 +4,7 @@
 <h1>Events</h1>
 <div class="card">
     <table>
-        <thead><tr><th>Title</th><th>Date</th><th>Location</th><th>Type</th><th>Scraped</th></tr></thead>
+        <thead><tr><th>Title</th><th>Date</th><th>Location</th><th>Type</th><th>Speakers</th><th>Organizer</th><th>Description</th><th>Scraped</th></tr></thead>
         <tbody>
         {% for event in events %}
         <tr>
@@ -12,6 +12,9 @@
             <td>{{ event.date.strftime('%Y-%m-%d') if event.date else '-' }}</td>
             <td>{{ event.location or '-' }}</td>
             <td>{{ event.event_type or '-' }}</td>
+            <td>{% if event.speakers and event.speakers != '[]' %}{{ event.speakers | replace('[', '') | replace(']', '') | replace('"', '') }}{% else %}-{% endif %}</td>
+            <td>{{ event.organizer or '-' }}</td>
+            <td>{{ (event.description or '-')[:100] }}{% if event.description and event.description|length > 100 %}...{% endif %}</td>
             <td>{{ event.scraped_at.strftime('%Y-%m-%d %H:%M') }}</td>
         </tr>
         {% endfor %}

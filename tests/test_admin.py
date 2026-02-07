@@ -220,6 +220,29 @@ def test_dashboard_contains_scrape_form(client):
     assert "Run Scraper Now" in response.text
 
 
+def test_admin_events_shows_speakers_and_organizer(client, session: Session):
+    event = Event(
+        external_id="evt-speakers",
+        title="Speaker Event",
+        url="https://example.com/speakers",
+        speakers='["Alice", "Bob"]',
+        organizer="DataTalk CZ",
+        description="A great event about data engineering and AI.",
+        scraped_at=datetime(2025, 9, 1),
+    )
+    session.add(event)
+    session.commit()
+
+    response = client.get("/admin/events", auth=(ADMIN_USER, ADMIN_PASS))
+    assert response.status_code == 200
+    html = response.text
+    assert "Speaker Event" in html
+    assert "Alice" in html
+    assert "Bob" in html
+    assert "DataTalk CZ" in html
+    assert "A great event about data" in html
+
+
 def test_subscribers_page_contains_add_form(client):
     response = client.get("/admin/subscribers", auth=(ADMIN_USER, ADMIN_PASS))
     assert response.status_code == 200

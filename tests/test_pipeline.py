@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.models import Event, NotificationLog, Subscriber, SubscriberStatus
+from app.models import Event, NotificationLog, ScrapeRun, ScrapeRunStatus, Subscriber, SubscriberStatus
 from app.notifications.pipeline import run_scrape_and_notify
 
 
@@ -99,6 +99,14 @@ async def test_pipeline_full_flow(pipeline_session):
     mock_email_sender.send.assert_called_once()
     mock_telegram.send_message.assert_called_once()
 
+    # Verify ScrapeRun was created with correct status
+    runs = pipeline_session.exec(select(ScrapeRun)).all()
+    assert len(runs) == 1
+    assert runs[0].status == ScrapeRunStatus.SUCCESS
+    assert runs[0].events_found == 1
+    assert runs[0].events_new == 1
+    assert runs[0].finished_at is not None
+
 
 @pytest.mark.anyio
 async def test_pipeline_no_events(pipeline_session):
@@ -118,3 +126,31 @@ async def test_pipeline_no_events(pipeline_session):
     # No notifications logged
     logs = pipeline_session.exec(select(NotificationLog)).all()
     assert len(logs) == 0
+
+    # ScrapeRun recorded with SUCCESS and 0 events
+    runs = pipeline_session.exec(select(ScrapeRun)).all()
+    assert len(runs) == 1
+    assert runs[0].status == ScrapeRunStatus.SUCCESS
+    assert runs[0].events_found == 0
+    assert runs[0].finished_at is not None
+
+
+@pytest.mark.anyio
+async def test_pipeline_creates_scrape_run_on_failure(pipeline_session):
+    """ScrapeRun is marked FAILED when an exception occurs."""
+    mock_scraper = AsyncMock()
+    mock_scraper.scrape.side_effect = RuntimeError("scrape failed")
+
+    with (
+        patch(
+            "app.notifications.pipeline.Scraper", return_value=mock_scraper
+        ),
+        pytest.raises(RuntimeError, match="scrape failed"),
+    ):
+        await run_scrape_and_notify(pipeline_session)
+
+    runs = pipeline_session.exec(select(ScrapeRun)).all()
+    assert len(runs) == 1
+    assert runs[0].status == ScrapeRunStatus.FAILED
+    assert runs[0].error_message == "scrape failed"
+    assert runs[0].finished_at is not None

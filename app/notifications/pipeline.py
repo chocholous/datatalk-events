@@ -1,11 +1,12 @@
 import hashlib
 import json
 import logging
+from datetime import datetime
 
 from sqlmodel import Session, select
 
 from app.extractor import EventExtractor
-from app.models import Event, NotificationLog, Subscriber, SubscriberStatus
+from app.models import Event, NotificationLog, ScrapeRun, ScrapeRunStatus, Subscriber, SubscriberStatus
 from app.notifications.email import get_email_sender, make_ics_attachment
 from app.notifications.telegram import TelegramNotifier, format_telegram_message
 from app.scraper import Scraper
@@ -14,87 +15,111 @@ log = logging.getLogger(__name__)
 
 
 async def run_scrape_and_notify(session: Session) -> None:
-    scraper = Scraper()
-    extractor = EventExtractor()
-    email_sender = get_email_sender()
-    telegram = TelegramNotifier()
-
-    # 1. Scrape
-    raw_events = await scraper.scrape()
-    if not raw_events:
-        log.warning("No events found")
-        return
-
-    # 2. LLM extraction
-    enriched = await extractor.extract(raw_events)
-
-    # 3. Save new events (deduplicate by external_id)
-    new_events: list[Event] = []
-    for e in enriched:
-        url = e.get("url", "")
-        event_id = hashlib.md5(url.encode()).hexdigest()[:16]
-        existing = session.exec(
-            select(Event).where(Event.external_id == event_id)
-        ).first()
-        if not existing:
-            event = Event(
-                external_id=event_id,
-                title=e.get("title", ""),
-                url=url,
-                location=e.get("location"),
-                description=e.get("description"),
-                topics=json.dumps(e.get("topics", [])),
-                event_type=e.get("type"),
-                language=e.get("language"),
-            )
-            session.add(event)
-            new_events.append(event)
+    run = ScrapeRun(status=ScrapeRunStatus.RUNNING)
+    session.add(run)
     session.commit()
+    session.refresh(run)
 
-    if not new_events:
-        log.info("No new events to notify about")
-        return
+    try:
+        scraper = Scraper()
+        extractor = EventExtractor()
+        email_sender = get_email_sender()
+        telegram = TelegramNotifier()
 
-    # Refresh to get IDs
-    for ev in new_events:
-        session.refresh(ev)
+        # 1. Scrape
+        raw_events = await scraper.scrape()
+        if not raw_events:
+            log.warning("No events found")
+            run.events_found = 0
+            run.status = ScrapeRunStatus.SUCCESS
+            run.finished_at = datetime.utcnow()
+            session.commit()
+            return
 
-    # 4. Notify verified subscribers
-    subscribers = session.exec(
-        select(Subscriber).where(Subscriber.status == SubscriberStatus.VERIFIED)
-    ).all()
+        # 2. LLM extraction
+        enriched = await extractor.extract(raw_events)
 
-    for sub in subscribers:
-        # Email with .ics attachments
-        attachments = [make_ics_attachment(ev) for ev in new_events]
-        html = format_event_email(new_events)
-        await email_sender.send(
-            sub.email, "Nove eventy na DataTalk", html, attachments
-        )
-
-        # Telegram
-        if sub.telegram_chat_id:
-            text = format_telegram_message(new_events)
-            await telegram.send_message(sub.telegram_chat_id, text)
-
-        # Log notifications
-        for ev in new_events:
-            session.add(
-                NotificationLog(
-                    subscriber_id=sub.id, event_id=ev.id, channel="email"
+        # 3. Save new events (deduplicate by external_id)
+        new_events: list[Event] = []
+        for e in enriched:
+            url = e.get("url", "")
+            event_id = hashlib.md5(url.encode()).hexdigest()[:16]
+            existing = session.exec(
+                select(Event).where(Event.external_id == event_id)
+            ).first()
+            if not existing:
+                event = Event(
+                    external_id=event_id,
+                    title=e.get("title", ""),
+                    url=url,
+                    location=e.get("location"),
+                    description=e.get("description"),
+                    topics=json.dumps(e.get("topics", [])),
+                    event_type=e.get("type"),
+                    language=e.get("language"),
                 )
+                session.add(event)
+                new_events.append(event)
+        session.commit()
+
+        run.events_found = len(enriched)
+        run.events_new = len(new_events)
+
+        if not new_events:
+            log.info("No new events to notify about")
+            run.status = ScrapeRunStatus.SUCCESS
+            run.finished_at = datetime.utcnow()
+            session.commit()
+            return
+
+        # Refresh to get IDs
+        for ev in new_events:
+            session.refresh(ev)
+
+        # 4. Notify verified subscribers
+        subscribers = session.exec(
+            select(Subscriber).where(Subscriber.status == SubscriberStatus.VERIFIED)
+        ).all()
+
+        for sub in subscribers:
+            # Email with .ics attachments
+            attachments = [make_ics_attachment(ev) for ev in new_events]
+            html = format_event_email(new_events)
+            await email_sender.send(
+                sub.email, "Nove eventy na DataTalk", html, attachments
             )
+
+            # Telegram
             if sub.telegram_chat_id:
+                text = format_telegram_message(new_events)
+                await telegram.send_message(sub.telegram_chat_id, text)
+
+            # Log notifications
+            for ev in new_events:
                 session.add(
                     NotificationLog(
-                        subscriber_id=sub.id, event_id=ev.id, channel="telegram"
+                        subscriber_id=sub.id, event_id=ev.id, channel="email"
                     )
                 )
+                if sub.telegram_chat_id:
+                    session.add(
+                        NotificationLog(
+                            subscriber_id=sub.id, event_id=ev.id, channel="telegram"
+                        )
+                    )
 
-    session.commit()
-    log.info(
-        f"Notified {len(subscribers)} subscribers about {len(new_events)} new events"
-    )
+        run.status = ScrapeRunStatus.SUCCESS
+        run.finished_at = datetime.utcnow()
+        session.commit()
+        log.info(
+            f"Notified {len(subscribers)} subscribers about {len(new_events)} new events"
+        )
+    except Exception as exc:
+        run.status = ScrapeRunStatus.FAILED
+        run.finished_at = datetime.utcnow()
+        run.error_message = str(exc)
+        session.commit()
+        raise
 
 
 def format_event_email(events: list[Event]) -> str:

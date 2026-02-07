@@ -54,6 +54,7 @@
         <div class="flash flash-success">
             {% if message == 'scrape_started' %}Scraper pipeline started in background.
             {% elif message == 'subscriber_added' %}Subscriber added successfully.
+            {% elif message == 'subscriber_updated' %}Subscriber updated successfully.
             {% else %}{{ message }}{% endif %}
         </div>
         {% endif %}

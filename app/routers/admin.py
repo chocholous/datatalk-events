@@ -1,4 +1,5 @@
 import asyncio
+import json
 import secrets
 from datetime import datetime
 
@@ -17,6 +18,20 @@ from app.notifications.pipeline import run_scrape_and_notify
 router = APIRouter(prefix="/admin")
 security = HTTPBasic()
 templates = Jinja2Templates(directory="app/templates/admin")
+
+
+def _parse_json_list(value: str) -> list[str]:
+    """Parse a JSON array string, returning empty list on failure."""
+    if not value or value == "[]":
+        return []
+    try:
+        result = json.loads(value)
+        return result if isinstance(result, list) else []
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
+templates.env.filters["parse_json_list"] = _parse_json_list
 
 
 def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):

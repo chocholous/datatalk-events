@@ -4,17 +4,34 @@
 <h1>Events</h1>
 <div class="card">
     <table>
-        <thead><tr><th>Title</th><th>Date</th><th>Location</th><th>Type</th><th>Speakers</th><th>Organizer</th><th>Description</th><th>Scraped</th></tr></thead>
+        <thead><tr>
+            <th>Title</th>
+            <th>Start</th>
+            <th>End</th>
+            <th>Location</th>
+            <th>Type</th>
+            <th>Language</th>
+            <th>Topics</th>
+            <th>Speakers</th>
+            <th>Organizer</th>
+            <th>Description</th>
+            <th>Image</th>
+            <th>Scraped</th>
+        </tr></thead>
         <tbody>
         {% for event in events %}
         <tr>
             <td><a href="{{ event.url }}">{{ event.title }}</a></td>
-            <td>{{ event.date.strftime('%Y-%m-%d') if event.date else '-' }}</td>
+            <td>{{ event.date.strftime('%Y-%m-%d %H:%M') if event.date else '-' }}</td>
+            <td>{{ event.end_date.strftime('%Y-%m-%d %H:%M') if event.end_date else '-' }}</td>
             <td>{{ event.location or '-' }}</td>
             <td>{{ event.event_type or '-' }}</td>
-            <td>{% if event.speakers and event.speakers != '[]' %}{{ event.speakers | replace('[', '') | replace(']', '') | replace('"', '') }}{% else %}-{% endif %}</td>
+            <td>{{ event.language or '-' }}</td>
+            <td>{% set topics = event.topics | parse_json_list %}{{ topics | join(', ') if topics else '-' }}</td>
+            <td>{% set speakers = event.speakers | parse_json_list %}{{ speakers | join(', ') if speakers else '-' }}</td>
             <td>{{ event.organizer or '-' }}</td>
             <td>{{ (event.description or '-')[:100] }}{% if event.description and event.description|length > 100 %}...{% endif %}</td>
+            <td>{% if event.image_url %}<a href="{{ event.image_url }}" title="{{ event.image_url }}">img</a>{% else %}-{% endif %}</td>
             <td>{{ event.scraped_at.strftime('%Y-%m-%d %H:%M') }}</td>
         </tr>
         {% endfor %}

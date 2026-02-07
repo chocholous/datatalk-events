@@ -3,7 +3,7 @@ import json
 import logging
 from datetime import datetime
 
-from sqlmodel import Session, delete, select
+from sqlmodel import Session, select
 
 from app.detail_fetcher import DetailFetcher
 from app.extractor import EventExtractor
@@ -25,6 +25,20 @@ def _parse_date(value: str | None) -> datetime | None:
         return None
 
 
+def _ensure_list(value) -> list:
+    """Ensure value is a list (handles None, string, other types)."""
+    if isinstance(value, list):
+        return value
+    return [value] if value else []
+
+
+def _ensure_str_or_none(value) -> str | None:
+    """Convert list to comma-separated string, pass through str/None."""
+    if isinstance(value, list):
+        return ", ".join(str(o) for o in value) if value else None
+    return value
+
+
 async def run_scrape_and_notify(session: Session) -> None:
     run = ScrapeRun(status=ScrapeRunStatus.RUNNING)
     session.add(run)
@@ -37,10 +51,6 @@ async def run_scrape_and_notify(session: Session) -> None:
         extractor = EventExtractor()
         email_sender = get_email_sender()
         telegram = TelegramNotifier()
-
-        # Delete previous events (fresh start each run)
-        session.exec(delete(Event))
-        session.commit()
 
         # 1. Scrape
         raw_events = await scraper.scrape()
@@ -58,74 +68,112 @@ async def run_scrape_and_notify(session: Session) -> None:
         # 2. LLM extraction
         enriched = await extractor.extract(enriched_raw)
 
-        # 3. Save events
-        new_events: list[Event] = []
+        # 3. Upsert events (update existing by external_id, insert new)
+        new_count = 0
+        updated_count = 0
+        all_events: list[Event] = []
         for e in enriched:
             url = e.get("url", "")
-            event_id = hashlib.md5(url.encode()).hexdigest()[:16]
-            # Ensure list fields are JSON strings, string fields are strings
-            topics = e.get("topics", [])
-            if not isinstance(topics, list):
-                topics = [topics] if topics else []
-            speakers = e.get("speakers", [])
-            if not isinstance(speakers, list):
-                speakers = [speakers] if speakers else []
-            organizer = e.get("organizer")
-            if isinstance(organizer, list):
-                organizer = ", ".join(str(o) for o in organizer) if organizer else None
-            event = Event(
-                external_id=event_id,
-                title=e.get("title", ""),
-                url=url,
-                date=_parse_date(e.get("date")),
-                end_date=_parse_date(e.get("end_date")),
-                location=e.get("location"),
-                description=e.get("description"),
-                topics=json.dumps(topics),
-                event_type=e.get("type"),
-                language=e.get("language"),
-                speakers=json.dumps(speakers),
-                organizer=organizer,
-                image_url=e.get("image_url"),
-            )
-            session.add(event)
-            new_events.append(event)
+            ext_id = hashlib.md5(url.encode()).hexdigest()[:16]
+
+            topics = json.dumps(_ensure_list(e.get("topics", [])))
+            speakers = json.dumps(_ensure_list(e.get("speakers", [])))
+            organizer = _ensure_str_or_none(e.get("organizer"))
+
+            existing = session.exec(
+                select(Event).where(Event.external_id == ext_id)
+            ).first()
+
+            if existing:
+                # Update existing event with fresh data
+                existing.title = e.get("title", "")
+                existing.url = url
+                existing.date = _parse_date(e.get("date"))
+                existing.end_date = _parse_date(e.get("end_date"))
+                existing.location = e.get("location")
+                existing.description = e.get("description")
+                existing.topics = topics
+                existing.event_type = e.get("type")
+                existing.language = e.get("language")
+                existing.speakers = speakers
+                existing.organizer = organizer
+                existing.image_url = e.get("image_url")
+                existing.scraped_at = datetime.utcnow()
+                all_events.append(existing)
+                updated_count += 1
+            else:
+                event = Event(
+                    external_id=ext_id,
+                    title=e.get("title", ""),
+                    url=url,
+                    date=_parse_date(e.get("date")),
+                    end_date=_parse_date(e.get("end_date")),
+                    location=e.get("location"),
+                    description=e.get("description"),
+                    topics=topics,
+                    event_type=e.get("type"),
+                    language=e.get("language"),
+                    speakers=speakers,
+                    organizer=organizer,
+                    image_url=e.get("image_url"),
+                )
+                session.add(event)
+                all_events.append(event)
+                new_count += 1
         session.commit()
 
-        run.events_found = len(enriched)
-        run.events_new = len(new_events)
+        # Refresh to get IDs
+        for ev in all_events:
+            session.refresh(ev)
 
-        if not new_events:
-            log.info("No new events to notify about")
+        run.events_found = len(enriched)
+        run.events_new = new_count
+        log.info(f"Events: {new_count} new, {updated_count} updated")
+
+        # 4. Notify subscribers about upcoming events they haven't been notified about
+        now = datetime.utcnow()
+        upcoming = [ev for ev in all_events if ev.date is None or ev.date > now]
+
+        if not upcoming:
+            log.info("No upcoming events to notify about")
             run.status = ScrapeRunStatus.SUCCESS
             run.finished_at = datetime.utcnow()
             session.commit()
             return
 
-        # Refresh to get IDs
-        for ev in new_events:
-            session.refresh(ev)
-
-        # 4. Notify verified subscribers
         subscribers = session.exec(
             select(Subscriber).where(Subscriber.status == SubscriberStatus.VERIFIED)
         ).all()
 
+        total_notifications = 0
         for sub in subscribers:
+            # Find events this subscriber hasn't been notified about yet
+            notif_logs = session.exec(
+                select(NotificationLog).where(
+                    NotificationLog.subscriber_id == sub.id,
+                    NotificationLog.channel == "email",
+                )
+            ).all()
+            already_notified = {nl.event_id for nl in notif_logs}
+            to_notify = [ev for ev in upcoming if ev.id not in already_notified]
+
+            if not to_notify:
+                continue
+
             # Email with .ics attachments
-            attachments = [make_ics_attachment(ev) for ev in new_events]
-            html = format_event_email(new_events)
+            attachments = [make_ics_attachment(ev) for ev in to_notify]
+            html = format_event_email(to_notify)
             await email_sender.send(
                 sub.email, "Nove eventy na DataTalk", html, attachments
             )
 
             # Telegram
             if sub.telegram_chat_id:
-                text = format_telegram_message(new_events)
+                text = format_telegram_message(to_notify)
                 await telegram.send_message(sub.telegram_chat_id, text)
 
             # Log notifications
-            for ev in new_events:
+            for ev in to_notify:
                 session.add(
                     NotificationLog(
                         subscriber_id=sub.id, event_id=ev.id, channel="email"
@@ -137,12 +185,13 @@ async def run_scrape_and_notify(session: Session) -> None:
                             subscriber_id=sub.id, event_id=ev.id, channel="telegram"
                         )
                     )
+            total_notifications += len(to_notify)
 
         run.status = ScrapeRunStatus.SUCCESS
         run.finished_at = datetime.utcnow()
         session.commit()
         log.info(
-            f"Notified {len(subscribers)} subscribers about {len(new_events)} new events"
+            f"Notified {len(subscribers)} subscribers about {total_notifications} event notifications total"
         )
     except Exception as exc:
         run.status = ScrapeRunStatus.FAILED

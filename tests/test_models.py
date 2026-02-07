@@ -83,6 +83,40 @@ class TestEventCRUD:
         assert result.language == "cs"
 
 
+class TestEventNewFields:
+    def test_event_model_new_fields(self, session) -> None:
+        """Test default values for speakers, organizer, image_url."""
+        event = Event(
+            external_id="evt-new-fields",
+            title="New Fields Event",
+            url="https://example.com/new-fields",
+        )
+        session.add(event)
+        session.commit()
+        session.refresh(event)
+
+        assert event.speakers == "[]"
+        assert event.organizer is None
+        assert event.image_url is None
+
+    def test_event_with_speakers_and_organizer(self, session) -> None:
+        event = Event(
+            external_id="evt-speakers",
+            title="Speaker Event",
+            url="https://example.com/speakers",
+            speakers='["Alice", "Bob"]',
+            organizer="DataTalk",
+            image_url="https://example.com/img.jpg",
+        )
+        session.add(event)
+        session.commit()
+        session.refresh(event)
+
+        assert event.speakers == '["Alice", "Bob"]'
+        assert event.organizer == "DataTalk"
+        assert event.image_url == "https://example.com/img.jpg"
+
+
 class TestNotificationLogCRUD:
     def test_create_notification_log(self, session) -> None:
         subscriber = Subscriber(email="dave@example.com")

@@ -15,6 +15,27 @@ def init_db(engine):
     SQLModel.metadata.create_all(engine)
 
 
+def migrate_db(engine):
+    """Add missing columns to existing tables (SQLite ALTER TABLE)."""
+    import sqlalchemy
+
+    inspector = sqlalchemy.inspect(engine)
+    columns = {c["name"] for c in inspector.get_columns("event")}
+    with engine.begin() as conn:
+        if "speakers" not in columns:
+            conn.execute(
+                sqlalchemy.text('ALTER TABLE event ADD COLUMN speakers TEXT DEFAULT "[]"')
+            )
+        if "organizer" not in columns:
+            conn.execute(
+                sqlalchemy.text("ALTER TABLE event ADD COLUMN organizer TEXT")
+            )
+        if "image_url" not in columns:
+            conn.execute(
+                sqlalchemy.text("ALTER TABLE event ADD COLUMN image_url TEXT")
+            )
+
+
 def get_session(engine) -> Generator[Session, None, None]:
     """FastAPI dependency for DB session."""
     with Session(engine) as session:

@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI
 from sqlmodel import Session, select
 
 from app.config import get_settings
-from app.database import get_engine, init_db
+from app.database import get_engine, init_db, migrate_db
 from app.dependencies import get_db, set_engine
 from app.models import Subscriber, ScrapeRun  # noqa: F401 — ensure tables are registered
 from app.notifications.pipeline import run_scrape_and_notify
@@ -32,6 +32,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Startup: create engine and initialize database
     engine = get_engine()
     init_db(engine)
+    migrate_db(engine)
     app.state.engine = engine
     set_engine(engine)
 

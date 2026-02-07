@@ -1,3 +1,4 @@
+import json
 import logging
 
 import httpx
@@ -32,8 +33,15 @@ class TelegramNotifier:
 
 
 def format_telegram_message(events: list[Event]) -> str:
-    items = "\n\n".join(
-        f"*{e.title}*\n{e.location or 'TBD'}\n[Vice info]({e.url})"
-        for e in events[:5]
-    )
-    return f"*Nove eventy*\n\n{items}"
+    parts = []
+    for e in events[:5]:
+        lines = [f"*{e.title}*"]
+        lines.append(e.location or "TBD")
+        speakers_list = json.loads(e.speakers) if e.speakers else []
+        if speakers_list:
+            lines.append(f"Speakers: {', '.join(speakers_list)}")
+        if e.description:
+            lines.append(e.description[:200])
+        lines.append(f"[Vice info]({e.url})")
+        parts.append("\n".join(lines))
+    return f"*Nove eventy*\n\n" + "\n\n".join(parts)

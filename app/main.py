@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -7,6 +8,14 @@ from sqlmodel import Session, select
 from app.config import get_settings
 from app.database import get_engine, get_session, init_db
 from app.models import Subscriber  # noqa: F401 — ensure table is registered
+from app.scheduler import create_scheduler
+
+log = logging.getLogger(__name__)
+
+
+async def scheduled_scrape() -> None:
+    """Placeholder for scheduled scrape job. Full pipeline comes in Phase 5."""
+    log.info("Scheduled scrape triggered")
 
 
 @asynccontextmanager
@@ -15,8 +24,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine = get_engine()
     init_db(engine)
     app.state.engine = engine
+
+    # Start scheduler
+    scheduler = create_scheduler(scheduled_scrape)
+    scheduler.start()
+    app.state.scheduler = scheduler
+    log.info("Scheduler started")
+
     yield
-    # Shutdown: dispose engine
+
+    # Shutdown: stop scheduler and dispose engine
+    scheduler.shutdown(wait=False)
+    log.info("Scheduler stopped")
     engine.dispose()
 
 

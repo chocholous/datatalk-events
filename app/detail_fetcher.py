@@ -18,6 +18,9 @@ BLOCKED_DOMAINS = {"linkedin.com", "www.linkedin.com"}
 # Signals that a page is a login/block page rather than real content
 BLOCKED_TITLE_KEYWORDS = ["login", "sign in", "log in", "přihlásit", "captcha", "verify"]
 
+# Event platforms to prioritize in search results (sorted first)
+PREFERRED_DOMAINS = {"luma.com", "meetup.com", "eventbrite.com", "lu.ma", "allevents.in", "konfeo.com"}
+
 
 class DetailFetcher:
     """Fetch event detail pages and extract structured data."""
@@ -104,39 +107,64 @@ class DetailFetcher:
         sem: asyncio.Semaphore,
         client: httpx.AsyncClient,
     ) -> BeautifulSoup | None:
-        """Search for event by title and scrape an alternative page."""
+        """Search for event by title and scrape the best alternative page.
+
+        Prioritizes pages with JSON-LD Event data (luma.com, meetup.com, etc.)
+        over generic pages.
+        """
         try:
             from ddgs import DDGS
             from urllib.parse import urlparse
 
             original_domain = urlparse(original_url).netloc.lower()
 
-            with DDGS() as ddgs:
-                results = list(ddgs.text(f"{title} event", max_results=5))
+            # Try exact title first, then broader query
+            queries = [f'"{title}"', f"{title} event"]
+            candidates: list[tuple[BeautifulSoup, str]] = []
 
-            for result in results:
-                alt_url = result.get("href", "")
-                alt_domain = urlparse(alt_url).netloc.lower()
+            for query in queries:
+                with DDGS() as ddgs:
+                    results = list(ddgs.text(query, max_results=8))
 
-                # Skip same blocked domain
-                if alt_domain == original_domain:
-                    continue
-                if any(alt_domain.endswith(bd) for bd in BLOCKED_DOMAINS):
-                    continue
+                # Sort: preferred event platforms first
+                def _domain_priority(r):
+                    domain = urlparse(r.get("href", "")).netloc.lower()
+                    return 0 if any(domain.endswith(pd) for pd in PREFERRED_DOMAINS) else 1
 
-                log.info("Trying fallback URL: %s", alt_url)
-                try:
-                    async with sem:
-                        resp = await client.get(alt_url)
-                        resp.raise_for_status()
-                    alt_soup = BeautifulSoup(resp.text, "html.parser")
-                    # Verify it's not also blocked
-                    if not self._is_blocked(alt_soup, alt_url):
-                        log.info("Fallback success: %s", alt_url)
-                        return alt_soup
-                except Exception:
-                    log.debug("Fallback URL failed: %s", alt_url, exc_info=True)
-                    continue
+                results.sort(key=_domain_priority)
+
+                for result in results:
+                    alt_url = result.get("href", "")
+                    alt_domain = urlparse(alt_url).netloc.lower()
+
+                    if alt_domain == original_domain:
+                        continue
+                    if any(alt_domain.endswith(bd) for bd in BLOCKED_DOMAINS):
+                        continue
+
+                    log.info("Trying fallback URL: %s", alt_url)
+                    try:
+                        async with sem:
+                            resp = await client.get(alt_url)
+                            resp.raise_for_status()
+                        alt_soup = BeautifulSoup(resp.text, "html.parser")
+                        if self._is_blocked(alt_soup, alt_url):
+                            continue
+                        # Best case: page has JSON-LD Event data — use immediately
+                        if self._extract_json_ld(alt_soup):
+                            log.info("Fallback with JSON-LD found: %s", alt_url)
+                            return alt_soup
+                        candidates.append((alt_soup, alt_url))
+                    except Exception:
+                        log.debug("Fallback URL failed: %s", alt_url, exc_info=True)
+                        continue
+
+                # If we found a page with JSON-LD in this query, we already returned
+                # If we have any candidates, use the first one
+                if candidates:
+                    best_soup, best_url = candidates[0]
+                    log.info("Fallback (no JSON-LD): %s", best_url)
+                    return best_soup
 
             log.warning("No fallback found for: %s", title)
         except Exception:

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Subscribers{% endblock %}
+{% block content %}
+<h1>Subscribers</h1>
+<div class="card">
+    <table>
+        <thead><tr><th>Email</th><th>Status</th><th>Telegram</th><th>Created</th></tr></thead>
+        <tbody>
+        {% for sub in subscribers %}
+        <tr>
+            <td>{{ sub.email }}</td>
+            <td><span class="badge badge-{{ sub.status.value }}">{{ sub.status.value }}</span></td>
+            <td>{{ sub.telegram_chat_id or '-' }}</td>
+            <td>{{ sub.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

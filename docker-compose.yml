@@ -8,3 +8,26 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+    networks:
+      - default
+
+  caddy:
+    image: caddy:2-alpine
+    profiles:
+      - production
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    depends_on:
+      - app
+    networks:
+      - default
+
+volumes:
+  caddy_data:
+  caddy_config:

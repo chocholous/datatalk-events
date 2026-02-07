@@ -6,8 +6,10 @@ from fastapi import Depends, FastAPI
 from sqlmodel import Session, select
 
 from app.config import get_settings
-from app.database import get_engine, get_session, init_db
+from app.database import get_engine, init_db
+from app.dependencies import get_db, set_engine
 from app.models import Subscriber  # noqa: F401 — ensure table is registered
+from app.routers import events, subscribers
 from app.scheduler import create_scheduler
 
 log = logging.getLogger(__name__)
@@ -24,6 +26,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine = get_engine()
     init_db(engine)
     app.state.engine = engine
+    set_engine(engine)
 
     # Start scheduler
     scheduler = create_scheduler(scheduled_scrape)
@@ -47,10 +50,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-
-def get_db():
-    """Dependency that yields a DB session from the app engine."""
-    yield from get_session(app.state.engine)
+app.include_router(subscribers.router)
+app.include_router(events.router)
 
 
 @app.get("/")

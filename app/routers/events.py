@@ -1,0 +1,36 @@
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import Response
+from sqlmodel import Session, select
+
+from app.dependencies import get_db
+from app.ical import event_to_ical
+from app.models import Event
+
+router = APIRouter()
+
+
+@router.get("/events")
+def list_events(limit: int = 20, db: Session = Depends(get_db)):
+    events = db.exec(
+        select(Event).order_by(Event.scraped_at.desc()).limit(limit)
+    ).all()
+    return events
+
+
+@router.get("/events/{event_id}/ical")
+def get_event_ical(event_id: int, db: Session = Depends(get_db)):
+    event = db.get(Event, event_id)
+    if not event:
+        raise HTTPException(404, "Event not found")
+    ical_data = event_to_ical(event)
+    return Response(
+        content=ical_data,
+        media_type="text/calendar",
+        headers={"Content-Disposition": f'attachment; filename="event-{event_id}.ics"'},
+    )
+
+
+@router.post("/scrape")
+def trigger_scrape(background: BackgroundTasks):
+    # Placeholder — real implementation in Phase 5
+    return {"success": True, "message": "Scraping started"}

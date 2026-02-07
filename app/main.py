@@ -10,7 +10,7 @@ from app.database import get_engine, init_db
 from app.dependencies import get_db, set_engine
 from app.models import Subscriber  # noqa: F401 — ensure table is registered
 from app.notifications.pipeline import run_scrape_and_notify
-from app.routers import events, subscribers
+from app.routers import admin, events, subscribers
 from app.scheduler import create_scheduler
 
 log = logging.getLogger(__name__)
@@ -59,6 +59,7 @@ app = FastAPI(
 
 app.include_router(subscribers.router)
 app.include_router(events.router)
+app.include_router(admin.router)
 
 
 @app.get("/")

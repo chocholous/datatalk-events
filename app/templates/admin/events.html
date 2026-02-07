@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Events{% endblock %}
+{% block content %}
+<h1>Events</h1>
+<div class="card">
+    <table>
+        <thead><tr><th>Title</th><th>Date</th><th>Location</th><th>Type</th><th>Scraped</th></tr></thead>
+        <tbody>
+        {% for event in events %}
+        <tr>
+            <td><a href="{{ event.url }}">{{ event.title }}</a></td>
+            <td>{{ event.date.strftime('%Y-%m-%d') if event.date else '-' }}</td>
+            <td>{{ event.location or '-' }}</td>
+            <td>{{ event.event_type or '-' }}</td>
+            <td>{{ event.scraped_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

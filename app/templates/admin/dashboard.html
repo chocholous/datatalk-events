@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+<div class="stats">
+    <div class="card stat"><div class="number">{{ total_subscribers }}</div><div class="label">Total Subscribers</div></div>
+    <div class="card stat"><div class="number">{{ verified }}</div><div class="label">Verified</div></div>
+    <div class="card stat"><div class="number">{{ pending }}</div><div class="label">Pending</div></div>
+    <div class="card stat"><div class="number">{{ total_events }}</div><div class="label">Events</div></div>
+</div>
+<div class="card">
+    <h3>Last Activity</h3>
+    <p>Last scrape: {{ last_scrape or 'Never' }}</p>
+    <p>Last notification: {{ last_notification or 'Never' }}</p>
+</div>
+{% endblock %}

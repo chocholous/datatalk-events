@@ -5,6 +5,7 @@ services:
       - "8000:8000"
     volumes:
       - ./data:/app/data
+      - ./.env:/app/.env:ro
     env_file:
       - .env
     restart: unless-stopped

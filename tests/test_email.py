@@ -1,15 +1,13 @@
-import base64
 from unittest.mock import patch
 
 import httpx
 import pytest
 import respx
 
-from app.models import Event
 from app.notifications.email import (
     ResendSender,
     SendGridSender,
-    make_ics_attachment,
+    format_welcome_email,
 )
 
 
@@ -67,22 +65,8 @@ async def test_sendgrid_sender_sends_email():
     assert b"Test Subject" in request.content
 
 
-def test_ics_attachment_is_valid():
-    """make_ics_attachment returns valid base64-encoded calendar data."""
-    event = Event(
-        id=1,
-        external_id="test-ext-id",
-        title="Test Event",
-        url="https://example.com/event",
-        location="Prague",
-    )
-    attachment = make_ics_attachment(event)
-
-    assert attachment["filename"] == "event-1.ics"
-    assert attachment["type"] == "text/calendar"
-
-    # Decode and verify it's valid iCal
-    decoded = base64.b64decode(attachment["content"])
-    assert b"BEGIN:VCALENDAR" in decoded
-    assert b"Test Event" in decoded
-    assert b"Prague" in decoded
+def test_welcome_email_contains_calendar_link():
+    """Welcome email includes the Google Calendar link."""
+    html = format_welcome_email("https://calendar.google.com/calendar/r?cid=test123")
+    assert "https://calendar.google.com/calendar/r?cid=test123" in html
+    assert "Pridat Google Calendar" in html

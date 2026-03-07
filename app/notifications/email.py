@@ -1,4 +1,3 @@
-import base64
 import logging
 from typing import Protocol
 
@@ -6,8 +5,6 @@ import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.config import EmailProvider, get_settings
-from app.ical import event_to_ical
-from app.models import Event
 
 log = logging.getLogger(__name__)
 
@@ -21,7 +18,6 @@ class EmailSender(Protocol):
         to: str,
         subject: str,
         html: str,
-        attachments: list[dict] | None = None,
     ) -> bool: ...
 
 
@@ -32,7 +28,6 @@ class ResendSender:
         to: str,
         subject: str,
         html: str,
-        attachments: list[dict] | None = None,
     ) -> bool:
         settings = get_settings()
         if not settings.resend_api_key:
@@ -44,8 +39,6 @@ class ResendSender:
             "subject": subject,
             "html": html,
         }
-        if attachments:
-            payload["attachments"] = attachments
         async with httpx.AsyncClient() as client:
             resp = await client.post(
                 RESEND_API_URL,
@@ -66,7 +59,6 @@ class SendGridSender:
         to: str,
         subject: str,
         html: str,
-        attachments: list[dict] | None = None,
     ) -> bool:
         settings = get_settings()
         if not settings.sendgrid_api_key:
@@ -78,15 +70,6 @@ class SendGridSender:
             "subject": subject,
             "content": [{"type": "text/html", "value": html}],
         }
-        if attachments:
-            payload["attachments"] = [
-                {
-                    "content": att["content"],
-                    "filename": att["filename"],
-                    "type": att.get("type", "text/calendar"),
-                }
-                for att in attachments
-            ]
         async with httpx.AsyncClient() as client:
             resp = await client.post(
                 SENDGRID_API_URL,
@@ -110,11 +93,15 @@ def get_email_sender() -> EmailSender:
     return ResendSender()
 
 
-def make_ics_attachment(event: Event) -> dict:
-    """Create base64-encoded .ics attachment for email."""
-    ics_bytes = event_to_ical(event)
-    return {
-        "content": base64.b64encode(ics_bytes).decode(),
-        "filename": f"event-{event.id}.ics",
-        "type": "text/calendar",
-    }
+def format_welcome_email(calendar_link: str) -> str:
+    return (
+        '<div style="font-family:sans-serif;max-width:600px;margin:0 auto;">'
+        '<h1 style="color:#333;">Vitej v DataTalk Events!</h1>'
+        '<p>Pridej si nas kalendar a bud v obraze o vsech data eventech:</p>'
+        f'<a href="{calendar_link}" style="display:inline-block;padding:12px 24px;'
+        'background:#0066cc;color:#fff;text-decoration:none;border-radius:6px;'
+        'font-weight:bold;">Pridat Google Calendar</a>'
+        '<p style="margin-top:20px;color:#666;">V den konani akce dostanes '
+        "pripominku na nasem Telegram kanalu.</p>"
+        "</div>"
+    )

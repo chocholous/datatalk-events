@@ -9,7 +9,7 @@ from app.config import get_settings
 from app.database import get_engine, init_db, migrate_db
 from app.dependencies import get_db, set_engine
 from app.models import Subscriber, ScrapeRun  # noqa: F401 — ensure tables are registered
-from app.notifications.pipeline import run_scrape_and_notify
+from app.notifications.pipeline import run_scrape_and_notify, send_daily_reminders
 from app.routers import admin, events, subscribers
 from app.scheduler import create_scheduler
 
@@ -17,7 +17,6 @@ log = logging.getLogger(__name__)
 
 
 async def scheduled_scrape() -> None:
-    """Run the full scrape-and-notify pipeline on schedule."""
     from app.dependencies import _engine
 
     if _engine is None:
@@ -27,24 +26,31 @@ async def scheduled_scrape() -> None:
         await run_scrape_and_notify(session)
 
 
+async def scheduled_daily_reminder() -> None:
+    from app.dependencies import _engine
+
+    if _engine is None:
+        log.error("Engine not initialized, skipping daily reminder")
+        return
+    with Session(_engine) as session:
+        await send_daily_reminders(session)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # Startup: create engine and initialize database
     engine = get_engine()
     init_db(engine)
     migrate_db(engine)
     app.state.engine = engine
     set_engine(engine)
 
-    # Start scheduler
-    scheduler = create_scheduler(scheduled_scrape)
+    scheduler = create_scheduler(scheduled_scrape, scheduled_daily_reminder)
     scheduler.start()
     app.state.scheduler = scheduler
     log.info("Scheduler started")
 
     yield
 
-    # Shutdown: stop scheduler and dispose engine
     scheduler.shutdown(wait=False)
     log.info("Scheduler stopped")
     engine.dispose()

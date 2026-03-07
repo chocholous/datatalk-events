@@ -235,21 +235,16 @@ class TestE2EWorkflow:
         assert "organizer" in first, "organizer field missing from events API"
         assert "image_url" in first, "image_url field missing from events API"
 
-    def test_12_notifications_sent(self, client, admin_auth):
-        """Verify notification logs exist for our subscriber.
+    def test_12_google_calendar_sync(self, client, admin_auth):
+        """Verify events were synced (events exist after scrape).
 
-        Note: If all scraped events were already in DB (deduplicated),
-        no new notifications are generated. This is expected behavior.
+        Note: Google Calendar sync is best-effort — if not configured,
+        events are still saved to DB. We verify events exist.
         """
-        html = client.get("/admin/notifications", auth=admin_auth).text
-        if TEST_EMAIL not in html:
-            # Check if it's because there were no NEW events
-            runs_html = client.get("/admin/runs", auth=admin_auth).text
-            pytest.skip(
-                "No notifications for subscriber — likely no NEW events "
-                "(all deduplicated). Check /admin/runs for events_new count."
-            )
-        assert TEST_EMAIL in html
+        r = client.get("/events")
+        assert r.status_code == 200
+        events = r.json()
+        assert len(events) > 0, "No events found after scrape"
 
     # ── Cleanup ─────────────────────────────────────────────────────
 

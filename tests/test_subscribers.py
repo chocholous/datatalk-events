@@ -1,4 +1,5 @@
 from datetime import datetime
+from unittest.mock import AsyncMock, patch
 
 from sqlmodel import select
 
@@ -42,7 +43,8 @@ class TestVerify:
         session.add(subscriber)
         session.commit()
 
-        response = client.get("/verify", params={"token": "test-token-123"})
+        with patch("app.routers.subscribers._send_welcome", new_callable=AsyncMock):
+            response = client.get("/verify", params={"token": "test-token-123"})
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True

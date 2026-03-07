@@ -6,13 +6,13 @@ async def _dummy_job():
 
 
 class TestScheduler:
-    def test_create_scheduler_registers_job(self):
-        scheduler = create_scheduler(_dummy_job)
+    def test_create_scheduler_registers_jobs(self):
+        scheduler = create_scheduler(_dummy_job, _dummy_job)
         try:
             jobs = scheduler.get_jobs()
-            assert len(jobs) == 1
-            assert jobs[0].id == "scraper"
+            assert len(jobs) == 2
+            job_ids = {j.id for j in jobs}
+            assert job_ids == {"scraper", "daily_reminder"}
         finally:
-            # Ensure scheduler is not left in a started state
             if scheduler.running:
                 scheduler.shutdown(wait=False)

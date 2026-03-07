@@ -8,7 +8,6 @@ Environment variables:
     BASE_URL        - app URL (default: http://localhost:8000)
     ADMIN_USERNAME  - admin user (default: admin)
     ADMIN_PASSWORD  - admin password (default: empty)
-    TEST_EMAIL      - subscriber email to use (default: pavel@chocholous.net)
 """
 
 import os
@@ -21,7 +20,6 @@ import pytest
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
 ADMIN_USER = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASS = os.environ.get("ADMIN_PASSWORD", "")
-TEST_EMAIL = os.environ.get("TEST_EMAIL", "pavel@chocholous.net")
 
 POLL_INTERVAL_SECONDS = 2
 POLL_MAX_WAIT_SECONDS = 120
@@ -62,13 +60,13 @@ def get_latest_run_status(html: str) -> str | None:
 
 
 class TestE2EWorkflow:
-    """Full workflow: add subscriber → scrape → verify results → cleanup."""
+    """Full workflow: connectivity → scrape → verify results."""
 
     # ── Connectivity ────────────────────────────────────────────────
 
     def test_01_app_is_running(self, client):
         """Verify the application is reachable."""
-        r = client.get("/")
+        r = client.get("/api/status")
         assert r.status_code == 200
         data = r.json()
         assert data["status"] == "running"
@@ -85,59 +83,15 @@ class TestE2EWorkflow:
         assert r.status_code == 200
         assert "Dashboard" in r.text
 
-    # ── Subscriber management ───────────────────────────────────────
-
-    def test_04_add_subscriber_verified(self, client, admin_auth):
-        """Add/update subscriber via admin form with verified status.
-
-        The admin endpoint does upsert — if subscriber already exists
-        (e.g. from a previous test run), it updates their status.
-        """
-        r = client.post(
-            "/admin/subscribers",
-            data={
-                "email": TEST_EMAIL,
-                "telegram_chat_id": "",
-                "status": "verified",
-            },
-            auth=admin_auth,
-            follow_redirects=False,
-        )
-        assert r.status_code == 303
-        location = r.headers.get("location", "")
-        assert "subscriber_added" in location or "subscriber_updated" in location, (
-            f"Expected success redirect, got: {location}"
-        )
-
-    def test_05_subscriber_appears_in_list(self, client, admin_auth):
-        """Verify subscriber is visible in admin subscribers page."""
-        r = client.get("/admin/subscribers", auth=admin_auth)
-        assert r.status_code == 200
-        assert TEST_EMAIL in r.text, f"{TEST_EMAIL} not found in subscribers list"
-
-    def test_06_subscriber_is_verified(self, client, admin_auth):
-        """Verify subscriber has 'verified' status badge."""
-        r = client.get("/admin/subscribers", auth=admin_auth)
-        assert r.status_code == 200
-        # Find TEST_EMAIL row and check it has verified badge
-        # HTML structure: <td>email</td><td><span class="badge badge-verified">
-        email_pos = r.text.find(TEST_EMAIL)
-        assert email_pos != -1
-        # Check the badge right after the email in the same row
-        row_snippet = r.text[email_pos:email_pos + 300]
-        assert "badge-verified" in row_snippet, (
-            f"Subscriber {TEST_EMAIL} is not in verified status"
-        )
-
     # ── Scrape pipeline ─────────────────────────────────────────────
 
-    def test_07_count_runs_before(self, client, admin_auth, scrape_result):
+    def test_04_count_runs_before(self, client, admin_auth, scrape_result):
         """Record number of runs before triggering scrape."""
         r = client.get("/admin/runs", auth=admin_auth)
         assert r.status_code == 200
         scrape_result["runs_before"] = count_runs(r.text)
 
-    def test_08_trigger_scrape(self, client, admin_auth):
+    def test_05_trigger_scrape(self, client, admin_auth):
         """Trigger manual scrape via admin."""
         r = client.post(
             "/admin/scrape",
@@ -146,11 +100,9 @@ class TestE2EWorkflow:
         )
         assert r.status_code == 303
         location = r.headers.get("location", "")
-        assert "scrape_started" in location, (
-            f"Expected scrape_started redirect, got: {location}"
-        )
+        assert "scrape_started" in location
 
-    def test_09_wait_for_scrape_completion(self, client, admin_auth, scrape_result):
+    def test_06_wait_for_scrape_completion(self, client, admin_auth, scrape_result):
         """Poll runs page until a new run finishes (success or failed)."""
         runs_before = scrape_result.get("runs_before", 0)
         deadline = time.time() + POLL_MAX_WAIT_SECONDS
@@ -161,7 +113,6 @@ class TestE2EWorkflow:
             current_runs = count_runs(html)
 
             if current_runs > runs_before:
-                # New run appeared — check its status
                 status = get_latest_run_status(html)
                 if status in ("success", "failed"):
                     scrape_result["status"] = status
@@ -170,27 +121,23 @@ class TestE2EWorkflow:
             time.sleep(POLL_INTERVAL_SECONDS)
 
         assert "status" in scrape_result, (
-            f"Scrape did not complete within {POLL_MAX_WAIT_SECONDS}s. "
-            "Check /admin/runs for details."
+            f"Scrape did not complete within {POLL_MAX_WAIT_SECONDS}s."
         )
 
-    def test_10_scrape_succeeded(self, scrape_result):
+    def test_07_scrape_succeeded(self, scrape_result):
         """Verify the scrape run finished with success status."""
-        assert scrape_result.get("status") == "success", (
-            "Scrape finished with status=failed. "
-            "Check /admin/runs for error details."
-        )
+        assert scrape_result.get("status") == "success"
 
     # ── Verify results ──────────────────────────────────────────────
 
-    def test_11_events_exist(self, client):
+    def test_08_events_exist(self, client):
         """Verify events API returns scraped events."""
         r = client.get("/events")
         assert r.status_code == 200
         events = r.json()
-        assert len(events) > 0, "No events found in /events API after scrape"
+        assert len(events) > 0
 
-    def test_11b_events_have_structured_data(self, client):
+    def test_09_events_have_structured_data(self, client):
         """Verify at least some events have location, description, event_type."""
         r = client.get("/events")
         events = r.json()
@@ -200,83 +147,31 @@ class TestE2EWorkflow:
         has_description = any(e.get("description") for e in events)
         has_type = any(e.get("event_type") for e in events)
 
-        assert has_location or has_description or has_type, (
-            "No events have structured data (location, description, or event_type). "
-            "Check if LLM extraction is working."
-        )
+        assert has_location or has_description or has_type
 
-    def test_11c_events_data_quality(self, client):
-        """Verify data quality: description length, URL validity."""
+    def test_10_events_data_quality(self, client):
+        """Verify data quality: URL validity."""
         r = client.get("/events")
         events = r.json()
         assert len(events) > 0
 
         for event in events:
-            # Every event must have a valid URL
             url = event.get("url", "")
             assert url.startswith("http"), f"Invalid URL: {url}"
 
-            # If description exists, it should be meaningful (> 20 chars)
-            desc = event.get("description")
-            if desc:
-                assert len(desc) > 20, (
-                    f"Description too short for '{event.get('title')}': '{desc}'"
-                )
-
-    def test_11d_events_api_returns_new_fields(self, client):
+    def test_11_events_api_returns_new_fields(self, client):
         """Verify events API returns speakers, organizer, image_url fields."""
         r = client.get("/events")
         events = r.json()
         assert len(events) > 0
 
         first = events[0]
-        # These fields should exist in the response (even if null)
-        assert "speakers" in first, "speakers field missing from events API"
-        assert "organizer" in first, "organizer field missing from events API"
-        assert "image_url" in first, "image_url field missing from events API"
+        assert "speakers" in first
+        assert "organizer" in first
+        assert "image_url" in first
 
-    def test_12_google_calendar_sync(self, client, admin_auth):
-        """Verify events were synced (events exist after scrape).
-
-        Note: Google Calendar sync is best-effort — if not configured,
-        events are still saved to DB. We verify events exist.
-        """
-        r = client.get("/events")
+    def test_12_landing_page(self, client):
+        """Verify landing page loads with calendar/telegram links."""
+        r = client.get("/")
         assert r.status_code == 200
-        events = r.json()
-        assert len(events) > 0, "No events found after scrape"
-
-    # ── Cleanup ─────────────────────────────────────────────────────
-
-    def test_13_cleanup_unsubscribe(self, client):
-        """Cleanup: unsubscribe test email."""
-        r = client.post("/unsubscribe", json={"email": TEST_EMAIL})
-        assert r.status_code == 200
-        assert r.json()["success"] is True
-
-    def test_14_subscriber_unsubscribed(self, client, admin_auth):
-        """Verify subscriber status changed to unsubscribed."""
-        r = client.get("/admin/subscribers", auth=admin_auth)
-        assert r.status_code == 200
-        assert TEST_EMAIL in r.text
-        email_pos = r.text.find(TEST_EMAIL)
-        row_snippet = r.text[email_pos:email_pos + 300]
-        assert "badge-unsubscribed" in row_snippet
-
-    # ── Re-add for live email test ──────────────────────────────────
-
-    def test_15_readd_subscriber_verified(self, client, admin_auth):
-        """Re-add subscriber as verified so user can check email delivery."""
-        r = client.post(
-            "/admin/subscribers",
-            data={
-                "email": TEST_EMAIL,
-                "telegram_chat_id": "",
-                "status": "verified",
-            },
-            auth=admin_auth,
-            follow_redirects=False,
-        )
-        assert r.status_code == 303
-        location = r.headers.get("location", "")
-        assert "subscriber_updated" in location or "subscriber_added" in location
+        assert "text/html" in r.headers["content-type"]

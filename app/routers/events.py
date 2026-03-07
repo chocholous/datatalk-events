@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 from app.dependencies import get_db
 from app.ical import event_to_ical
 from app.models import Event
-from app.notifications.pipeline import run_scrape_and_notify
+from app.notifications.pipeline import run_scrape_and_sync
 
 router = APIRouter()
 
@@ -35,7 +35,7 @@ def get_event_ical(event_id: int, db: Session = Depends(get_db)):
 
 def _run_pipeline(db: Session) -> None:
     """Run the async pipeline in a new event loop for background tasks."""
-    asyncio.run(run_scrape_and_notify(db))
+    asyncio.run(run_scrape_and_sync(db))
 
 
 @router.post("/scrape")

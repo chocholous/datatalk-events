@@ -1,16 +1,10 @@
 import logging
-from enum import StrEnum
 from functools import lru_cache
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
-
-
-class EmailProvider(StrEnum):
-    RESEND = "resend"
-    SENDGRID = "sendgrid"
 
 
 class Settings(BaseSettings):
@@ -27,10 +21,6 @@ class Settings(BaseSettings):
     scrape_schedule: str = "0 8 * * 1"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
-    email_provider: EmailProvider = EmailProvider.RESEND
-    resend_api_key: str = ""
-    sendgrid_api_key: str = ""
-    email_from: str = "events@datatalk.cz"
     telegram_bot_token: str = ""
     telegram_channel_id: str = ""
     google_calendar_id: str = ""
@@ -39,6 +29,7 @@ class Settings(BaseSettings):
     webhook_url: str = "http://localhost:8000"
     admin_username: str = "admin"
     admin_password: str = ""
+    hetzner_api_key: str = ""
     scrape_detail_concurrency: int = 5
     scrape_detail_timeout: int = 15
 

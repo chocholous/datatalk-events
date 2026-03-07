@@ -56,7 +56,7 @@ class TestGetEventIcal:
 class TestTriggerScrape:
     def test_trigger_scrape(self, client) -> None:
         with patch(
-            "app.routers.events.run_scrape_and_notify"
+            "app.routers.events.run_scrape_and_sync"
         ) as mock_pipeline:
             response = client.post("/scrape")
         assert response.status_code == 200

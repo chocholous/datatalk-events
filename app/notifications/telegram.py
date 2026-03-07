@@ -18,23 +18,6 @@ class TelegramNotifier:
         return f"{TELEGRAM_API_BASE}/bot{settings.telegram_bot_token}/{method}"
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
-    async def send_message(self, chat_id: str, text: str) -> bool:
-        settings = get_settings()
-        if not settings.telegram_bot_token:
-            log.warning("Telegram bot token not set, skipping")
-            return False
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                self._bot_url("sendMessage"),
-                json={
-                    "chat_id": chat_id,
-                    "text": text,
-                    "parse_mode": "Markdown",
-                },
-            )
-            return resp.status_code == 200
-
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
     async def send_to_channel(self, text: str) -> bool:
         settings = get_settings()
         if not settings.telegram_bot_token or not settings.telegram_channel_id:
@@ -52,7 +35,7 @@ class TelegramNotifier:
             return resp.status_code == 200
 
 
-def format_daily_reminder(events: list[Event]) -> str:
+def format_event_reminder(events: list[Event]) -> str:
     parts = []
     for e in events:
         lines = [f"*{e.title}*"]
@@ -66,13 +49,4 @@ def format_daily_reminder(events: list[Event]) -> str:
             lines.append(e.description[:200])
         lines.append(f"[Vice info]({e.url})")
         parts.append("\n".join(lines))
-    return f"*Dnes se kona:*\n\n" + "\n\n".join(parts)
-
-
-def format_welcome_message(calendar_link: str) -> str:
-    return (
-        f"*Vitej v DataTalk Events!*\n\n"
-        f"Pridej si nas kalendar a bud v obraze:\n"
-        f"[Pridat Google Calendar]({calendar_link})\n\n"
-        f"V den konani akce ti posleme pripominku do tohoto kanalu."
-    )
+    return f"*Za 2 hodiny:*\n\n" + "\n\n".join(parts)

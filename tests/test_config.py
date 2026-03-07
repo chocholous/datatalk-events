@@ -1,7 +1,4 @@
-import pytest
-from pydantic import ValidationError
-
-from app.config import EmailProvider, Settings
+from app.config import Settings
 
 
 class TestSettings:
@@ -14,24 +11,10 @@ class TestSettings:
         assert settings.scrape_schedule == "0 8 * * 1"
         assert settings.openai_api_key == ""
         assert settings.openai_model == "gpt-4o-mini"
-        assert settings.email_provider == EmailProvider.RESEND
-        assert settings.resend_api_key == ""
-        assert settings.sendgrid_api_key == ""
-        assert settings.email_from == "events@datatalk.cz"
         assert settings.telegram_bot_token == ""
+        assert settings.telegram_channel_id == ""
+        assert settings.google_calendar_id == ""
         assert settings.secret_key == ""
         assert settings.webhook_url == "http://localhost:8000"
         assert settings.admin_username == "admin"
         assert settings.admin_password == ""
-
-    def test_email_provider_accepts_resend(self) -> None:
-        settings = Settings(email_provider="resend")
-        assert settings.email_provider == EmailProvider.RESEND
-
-    def test_email_provider_accepts_sendgrid(self) -> None:
-        settings = Settings(email_provider="sendgrid")
-        assert settings.email_provider == EmailProvider.SENDGRID
-
-    def test_email_provider_rejects_invalid(self) -> None:
-        with pytest.raises(ValidationError):
-            Settings(email_provider="mailgun")

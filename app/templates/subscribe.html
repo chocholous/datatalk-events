@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>DATA talk events</title>
+    <link rel="icon" type="image/svg+xml" href="https://datatalk.cz/favicon.svg">
+    <style>
+        @font-face {
+            font-family: 'Right Grotesk';
+            font-weight: 100 900;
+            font-display: swap;
+            src: url(https://datatalk.cz/assets/css/right-grotesk-ac402e2245.latin.woff2) format('woff2');
+            unicode-range: U+0-FF, U+131, U+152, U+153, U+2BB, U+2BC, U+2C6, U+2DA, U+2DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+        }
+        @font-face {
+            font-family: 'Right Grotesk';
+            font-weight: 100 900;
+            font-display: swap;
+            src: url(https://datatalk.cz/assets/css/right-grotesk-10eb42a334.latin-ext.woff2) format('woff2');
+            unicode-range: U+0100-017F, U+0218-021B;
+        }
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            font-feature-settings: "kern", "liga", "clig", "calt", "lnum", "zero";
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: geometricPrecision;
+            line-height: 1.5;
+            color: #000;
+            background: #fff;
+        }
+        h1, h2, h3, label, button, .brand, .cal-btn { font-family: 'Right Grotesk', system-ui, sans-serif; }
+        a { color: inherit; }
+
+        /* ── Header (identical to datatalk.cz) ── */
+        header {
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .header-inner {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 1rem 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .brand {
+            font-size: clamp(1rem, 4vw, 1.5rem);
+            font-weight: 700;
+            text-decoration: none;
+            color: #000;
+        }
+        nav a {
+            font-family: 'Right Grotesk', system-ui, sans-serif;
+            font-weight: 300;
+            text-decoration: none;
+            color: #000;
+            position: relative;
+            margin-left: 1.5rem;
+            font-size: 0.95rem;
+        }
+        nav a::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            width: 100%;
+            height: 1.5px;
+            background: #000;
+            transform: scaleX(0);
+            transform-origin: center;
+            transition: transform 0.25s cubic-bezier(.5,.75,.75,1.25);
+        }
+        nav a:hover::after { transform: scaleX(1); }
+        nav a:hover { color: #666; }
+
+        /* ── Hero ── */
+        .hero {
+            background: #000;
+            color: #fff;
+            padding: clamp(4rem, 12vw, 8rem) 1.5rem clamp(3rem, 8vw, 5rem);
+        }
+        .hero-inner {
+            max-width: 960px;
+            margin: 0 auto;
+            display: grid;
+            gap: 2rem;
+        }
+        @media (min-width: 640px) {
+            .hero-inner { grid-template-columns: 1fr 1fr; align-items: center; }
+        }
+        .hero h1 {
+            font-size: clamp(2.5rem, 10vw, 4.5rem);
+            font-weight: 800;
+            line-height: 0.92;
+            letter-spacing: -0.035em;
+        }
+        .hero h1 span { font-weight: 200; }
+        .hero-right p {
+            font-weight: 300;
+            font-size: clamp(0.95rem, 2.5vw, 1.15rem);
+            opacity: 0.65;
+            max-width: 36ch;
+            margin-bottom: 1.5rem;
+        }
+        .cal-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            background: #fff;
+            color: #000;
+            text-decoration: none;
+            padding: 0.8rem 1.6rem;
+            font-weight: 700;
+            font-size: 0.9rem;
+            letter-spacing: -0.01em;
+            transition: transform 0.15s, opacity 0.15s;
+        }
+        .cal-btn:hover { transform: translateY(-1px); opacity: 0.9; color: #000; }
+        .cal-btn svg { flex-shrink: 0; }
+
+        /* ── Main content ── */
+        .content {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: clamp(2rem, 6vw, 4rem) 1.5rem;
+            display: grid;
+            gap: clamp(3rem, 6vw, 5rem);
+        }
+
+        /* ── Section headings ── */
+        section h2 {
+            font-size: clamp(1.3rem, 4vw, 1.75rem);
+            font-weight: 700;
+            letter-spacing: -0.025em;
+            margin-bottom: 0.15rem;
+        }
+        .sub {
+            color: #888;
+            font-size: 0.9rem;
+            font-weight: 300;
+            margin-bottom: 1.5rem;
+        }
+
+        /* ── Subscribe form ── */
+        .form-grid {
+            display: grid;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        @media (min-width: 480px) {
+            .form-grid { grid-template-columns: 1fr 1fr; }
+        }
+        .field label {
+            display: block;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #666;
+            margin-bottom: 0.3rem;
+        }
+        .field input {
+            width: 100%;
+            padding: 0.65rem 0;
+            border: none;
+            border-bottom: 1.5px solid #e0e0e0;
+            background: transparent;
+            color: #000;
+            font: inherit;
+            font-size: 1rem;
+            transition: border-color 0.2s;
+            outline: none;
+        }
+        .field input:focus { border-color: #000; }
+        .field input::placeholder { color: #ccc; }
+        .field small { display: block; margin-top: 0.25rem; font-size: 0.72rem; color: #aaa; }
+        .submit-btn {
+            display: block;
+            width: 100%;
+            padding: 0.85rem;
+            background: #000;
+            color: #fff;
+            border: none;
+            font-size: 0.85rem;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: opacity 0.15s;
+        }
+        .submit-btn:hover { opacity: 0.8; }
+
+        /* ── Alert ── */
+        .alert { padding: 0.7rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
+        .alert-ok { background: #e8f5e9; color: #2e7d32; }
+        .alert-err { background: #fce4ec; color: #c62828; }
+
+        /* ── Events list ── */
+        .events-grid {
+            display: grid;
+            gap: 0;
+        }
+        .ev {
+            display: grid;
+            grid-template-columns: 4rem 1fr;
+            gap: 1.25rem;
+            padding: 1.25rem 0;
+            border-bottom: 1px solid #f0f0f0;
+            align-items: start;
+        }
+        .ev:first-child { padding-top: 0; }
+        .ev:last-child { border-bottom: none; }
+        .ev-date {
+            text-align: center;
+            line-height: 1.05;
+            padding-top: 0.1rem;
+        }
+        .ev-date .d {
+            font-family: 'Right Grotesk', system-ui, sans-serif;
+            font-size: 2rem;
+            font-weight: 800;
+            letter-spacing: -0.04em;
+            display: block;
+        }
+        .ev-date .m {
+            font-size: 0.65rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #999;
+            display: block;
+        }
+        .ev h3 {
+            font-size: 1rem;
+            font-weight: 700;
+            letter-spacing: -0.015em;
+            line-height: 1.3;
+        }
+        .ev h3 a {
+            text-decoration: none;
+            transition: opacity 0.15s;
+        }
+        .ev h3 a:hover { opacity: 0.5; }
+        .ev .meta {
+            font-size: 0.8rem;
+            color: #999;
+            font-weight: 300;
+            margin-top: 0.1rem;
+        }
+        .ev .desc {
+            font-size: 0.82rem;
+            color: #666;
+            margin-top: 0.25rem;
+            line-height: 1.5;
+        }
+
+        /* ── Footer ── */
+        footer {
+            border-top: 1px solid #f0f0f0;
+            padding: 2rem 1.5rem;
+            text-align: center;
+        }
+        .footer-inner {
+            max-width: 960px;
+            margin: 0 auto;
+            font-size: 0.75rem;
+            color: #bbb;
+        }
+        .footer-inner a {
+            color: #bbb;
+            text-decoration: none;
+            font-weight: 300;
+        }
+        .footer-inner a:hover { color: #666; }
+        .footer-inner span { margin: 0 0.4rem; }
+
+        #result { display: none; }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-inner">
+            <a href="https://datatalk.cz" class="brand">DATA talk</a>
+            <nav>
+                <a href="https://datatalk.cz/news/">Newsletter</a>
+                <a href="https://datatalk.cz/podcast/">Podcast</a>
+                <a href="https://datatalk.cz/datamesh/">Meetup</a>
+                <a href="/">Kalendar akci</a>
+            </nav>
+        </div>
+    </header>
+
+    <div class="hero">
+        <div class="hero-inner">
+            <div>
+                <h1>Kalendar<br>data <span>akci</span></h1>
+            </div>
+            <div class="hero-right">
+                <p>Vsechny data & tech eventy v Cesku a na Slovensku na jednom miste. Pridej si kalendar, pripomeneme ti.</p>
+                {% if calendar_link %}
+                <a href="{{ calendar_link }}" class="cal-btn" target="_blank">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    Pridat do Google Calendar
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="content">
+        <section>
+            <h2>Odber</h2>
+            <p class="sub">Po overeni ti posleme odkaz na kalendar. 2 hodiny pred kazdou akci dostanes pripominku na Telegram.</p>
+            <div id="result"></div>
+            <form id="sf">
+                <div class="form-grid">
+                    <div class="field">
+                        <label for="email">Email</label>
+                        <input type="email" id="email" required placeholder="tvuj@email.cz">
+                    </div>
+                    <div class="field">
+                        <label for="tg">Telegram Chat ID</label>
+                        <input type="text" id="tg" placeholder="volitelne">
+                        <small>Napis @datamesh_chocho_bot /start</small>
+                    </div>
+                </div>
+                <button type="submit" class="submit-btn">Odebrat</button>
+            </form>
+        </section>
+
+        {% if events %}
+        <section>
+            <h2>Nadchazejici akce</h2>
+            <p class="sub">{{ events|length }} {% if events|length == 1 %}akce{% elif events|length < 5 %}akce{% else %}akci{% endif %} v kalendari</p>
+            <div class="events-grid">
+                {% for event in events %}
+                <div class="ev">
+                    <div class="ev-date">
+                        {% if event.date %}
+                        <span class="d">{{ event.date.strftime('%d') }}</span>
+                        <span class="m">{{ event.date.strftime('%b') }}</span>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <h3><a href="{{ event.url }}" target="_blank">{{ event.title }}</a></h3>
+                        <div class="meta">
+                            {% if event.date %}{{ event.date.strftime('%H:%M') }}{% endif %}{% if event.location %} · {{ event.location }}{% endif %}
+                        </div>
+                        {% if event.description %}
+                        <p class="desc">{{ event.description[:100] }}{% if event.description|length > 100 %}…{% endif %}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+    </div>
+
+    <footer>
+        <div class="footer-inner">
+            <a href="https://datatalk.cz">datatalk.cz</a>
+            <span>^^</span>
+            <a href="https://datamesh.cz">DATA mesh</a>
+            <span>^^</span>
+            <a href="https://dataday.cz">DATA day</a>
+        </div>
+    </footer>
+
+    <script>
+    document.getElementById('sf').addEventListener('submit', async e => {
+        e.preventDefault();
+        const r = document.getElementById('result');
+        try {
+            const resp = await fetch('/subscribe', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    email: document.getElementById('email').value,
+                    telegram_chat_id: document.getElementById('tg').value || null
+                }),
+            });
+            const d = await resp.json();
+            r.className = resp.ok ? 'alert alert-ok' : 'alert alert-err';
+            r.textContent = resp.ok ? 'Overovaci email odeslan! Zkontroluj schranku.' : (d.detail || 'Neco se pokazilo.');
+        } catch { r.className = 'alert alert-err'; r.textContent = 'Chyba pripojeni.'; }
+        r.style.display = 'block';
+    });
+    </script>
+</body>
+</html>

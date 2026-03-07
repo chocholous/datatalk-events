@@ -12,7 +12,7 @@ class TestScheduler:
             jobs = scheduler.get_jobs()
             assert len(jobs) == 2
             job_ids = {j.id for j in jobs}
-            assert job_ids == {"scraper", "daily_reminder"}
+            assert job_ids == {"scraper", "event_reminder"}
         finally:
             if scheduler.running:
                 scheduler.shutdown(wait=False)

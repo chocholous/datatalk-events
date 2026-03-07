@@ -9,8 +9,8 @@ from app.notifications.telegram import TelegramNotifier
 
 @pytest.mark.anyio
 @respx.mock
-async def test_telegram_sends_message():
-    """Mock Telegram API and verify message is sent."""
+async def test_telegram_sends_to_channel():
+    """Mock Telegram API and verify message is sent to channel."""
     route = respx.post(
         "https://api.telegram.org/bottest-token/sendMessage"
     ).mock(return_value=httpx.Response(200, json={"ok": True}))
@@ -19,16 +19,15 @@ async def test_telegram_sends_message():
         "app.notifications.telegram.get_settings"
     ) as mock_settings:
         mock_settings.return_value.telegram_bot_token = "test-token"
+        mock_settings.return_value.telegram_channel_id = "@test_channel"
 
         notifier = TelegramNotifier()
-        result = await notifier.send_message(
-            chat_id="12345", text="Hello from test"
-        )
+        result = await notifier.send_to_channel("Hello from test")
 
     assert result is True
     assert route.called
     request = route.calls[0].request
-    assert b"12345" in request.content
+    assert b"@test_channel" in request.content
     assert b"Hello from test" in request.content
 
 
@@ -39,10 +38,9 @@ async def test_telegram_skips_without_token():
         "app.notifications.telegram.get_settings"
     ) as mock_settings:
         mock_settings.return_value.telegram_bot_token = ""
+        mock_settings.return_value.telegram_channel_id = "@test"
 
         notifier = TelegramNotifier()
-        result = await notifier.send_message(
-            chat_id="12345", text="Hello"
-        )
+        result = await notifier.send_to_channel("Hello")
 
     assert result is False

@@ -1,7 +1,7 @@
 import hashlib
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlmodel import Session, select
 
@@ -9,7 +9,7 @@ from app.detail_fetcher import DetailFetcher
 from app.extractor import EventExtractor
 from app.google_calendar import sync_events_to_google_calendar
 from app.models import Event, ScrapeRun, ScrapeRunStatus
-from app.notifications.telegram import TelegramNotifier, format_daily_reminder
+from app.notifications.telegram import TelegramNotifier, format_event_reminder
 from app.scraper import Scraper
 
 log = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ def _ensure_str_or_none(value) -> str | None:
     return value
 
 
-async def run_scrape_and_notify(session: Session) -> None:
+async def run_scrape_and_sync(session: Session) -> None:
     run = ScrapeRun(status=ScrapeRunStatus.RUNNING)
     session.add(run)
     session.commit()
@@ -140,21 +140,22 @@ async def run_scrape_and_notify(session: Session) -> None:
         raise
 
 
-async def send_daily_reminders(session: Session) -> None:
-    """Send Telegram notification to channel about today's events."""
+async def send_event_reminders(session: Session) -> None:
+    """Send Telegram reminder to channel for events starting in ~2 hours."""
     now = datetime.utcnow()
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+    window_start = now + timedelta(hours=1, minutes=45)
+    window_end = now + timedelta(hours=2, minutes=15)
 
-    todays_events = session.exec(
-        select(Event).where(Event.date >= today_start, Event.date <= today_end)
+    upcoming = session.exec(
+        select(Event).where(Event.date >= window_start, Event.date <= window_end)
     ).all()
 
-    if not todays_events:
-        log.info("No events today, skipping daily reminder")
+    if not upcoming:
         return
 
     telegram = TelegramNotifier()
-    text = format_daily_reminder(list(todays_events))
-    await telegram.send_to_channel(text)
-    log.info(f"Sent daily reminder for {len(todays_events)} events")
+    text = format_event_reminder(list(upcoming))
+    if await telegram.send_to_channel(text):
+        log.info(f"Sent reminder for {len(upcoming)} events starting in ~2h")
+    else:
+        log.warning("Failed to send reminder to channel")

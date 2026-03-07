@@ -5,8 +5,8 @@ import pytest
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.models import Event, ScrapeRun, ScrapeRunStatus, Subscriber, SubscriberStatus
-from app.notifications.pipeline import run_scrape_and_notify, send_daily_reminders
+from app.models import Event, ScrapeRun, ScrapeRunStatus
+from app.notifications.pipeline import run_scrape_and_sync, send_event_reminders
 
 
 @pytest.fixture(name="pipeline_session")
@@ -84,7 +84,7 @@ async def test_pipeline_full_flow(pipeline_session):
         patch("app.notifications.pipeline.EventExtractor", return_value=mock_extractor),
         mock_gcal as gcal_mock,
     ):
-        await run_scrape_and_notify(pipeline_session)
+        await run_scrape_and_sync(pipeline_session)
 
     # Verify events were saved
     events = pipeline_session.exec(select(Event)).all()
@@ -114,7 +114,7 @@ async def test_pipeline_no_events(pipeline_session):
         patch("app.notifications.pipeline.Scraper", return_value=mock_scraper),
         patch("app.notifications.pipeline.DetailFetcher"),
     ):
-        await run_scrape_and_notify(pipeline_session)
+        await run_scrape_and_sync(pipeline_session)
 
     events = pipeline_session.exec(select(Event)).all()
     assert len(events) == 0
@@ -137,7 +137,7 @@ async def test_pipeline_creates_scrape_run_on_failure(pipeline_session):
         patch("app.notifications.pipeline.DetailFetcher"),
         pytest.raises(RuntimeError, match="scrape failed"),
     ):
-        await run_scrape_and_notify(pipeline_session)
+        await run_scrape_and_sync(pipeline_session)
 
     runs = pipeline_session.exec(select(ScrapeRun)).all()
     assert len(runs) == 1
@@ -158,7 +158,7 @@ async def test_pipeline_calls_detail_fetcher(pipeline_session):
     p = _pipeline_patches(mock_scraper, mock_detail_fetcher, mock_extractor)
 
     with p[0], p[1], p[2], p[3]:
-        await run_scrape_and_notify(pipeline_session)
+        await run_scrape_and_sync(pipeline_session)
 
     mock_detail_fetcher.fetch_details.assert_called_once_with(raw_events)
     mock_extractor.extract.assert_called_once()
@@ -186,7 +186,7 @@ async def test_pipeline_upserts_events(pipeline_session):
     p = _pipeline_patches(mock_scraper, mock_detail_fetcher, mock_extractor)
 
     with p[0], p[1], p[2], p[3]:
-        await run_scrape_and_notify(pipeline_session)
+        await run_scrape_and_sync(pipeline_session)
 
     events_after = pipeline_session.exec(select(Event)).all()
     assert len(events_after) == 1
@@ -215,7 +215,7 @@ async def test_pipeline_saves_new_fields(pipeline_session):
     p = _pipeline_patches(mock_scraper, mock_detail_fetcher, mock_extractor)
 
     with p[0], p[1], p[2], p[3]:
-        await run_scrape_and_notify(pipeline_session)
+        await run_scrape_and_sync(pipeline_session)
 
     events = pipeline_session.exec(select(Event)).all()
     assert len(events) == 1
@@ -227,14 +227,14 @@ async def test_pipeline_saves_new_fields(pipeline_session):
 
 
 @pytest.mark.anyio
-async def test_daily_reminders_sends_for_today(pipeline_session):
-    """Daily reminder sends Telegram message for today's events."""
+async def test_event_reminder_sends_to_channel(pipeline_session):
+    """Reminder sends Telegram message to channel for events starting in ~2h."""
     now = datetime.utcnow()
     event = Event(
-        external_id="today-1",
-        title="Today Event",
-        url="https://example.com/today",
-        date=now.replace(hour=14, minute=0),
+        external_id="soon-1",
+        title="Soon Event",
+        url="https://example.com/soon",
+        date=now + timedelta(hours=2),
     )
     pipeline_session.add(event)
     pipeline_session.commit()
@@ -243,17 +243,27 @@ async def test_daily_reminders_sends_for_today(pipeline_session):
     mock_telegram.send_to_channel.return_value = True
 
     with patch("app.notifications.pipeline.TelegramNotifier", return_value=mock_telegram):
-        await send_daily_reminders(pipeline_session)
+        await send_event_reminders(pipeline_session)
 
     mock_telegram.send_to_channel.assert_called_once()
 
 
 @pytest.mark.anyio
-async def test_daily_reminders_skips_no_events(pipeline_session):
-    """Daily reminder does nothing when no events today."""
+async def test_event_reminder_skips_distant_events(pipeline_session):
+    """Reminder does nothing for events not in the 2h window."""
+    now = datetime.utcnow()
+    event = Event(
+        external_id="later-1",
+        title="Later Event",
+        url="https://example.com/later",
+        date=now + timedelta(hours=5),
+    )
+    pipeline_session.add(event)
+    pipeline_session.commit()
+
     mock_telegram = AsyncMock()
 
     with patch("app.notifications.pipeline.TelegramNotifier", return_value=mock_telegram):
-        await send_daily_reminders(pipeline_session)
+        await send_event_reminders(pipeline_session)
 
     mock_telegram.send_to_channel.assert_not_called()

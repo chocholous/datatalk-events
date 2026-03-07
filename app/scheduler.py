@@ -2,13 +2,14 @@ import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from app.config import get_settings
 
 log = logging.getLogger(__name__)
 
 
-def create_scheduler(scrape_func, daily_reminder_func) -> AsyncIOScheduler:
+def create_scheduler(scrape_func, reminder_func) -> AsyncIOScheduler:
     settings = get_settings()
     scheduler = AsyncIOScheduler()
 
@@ -27,13 +28,13 @@ def create_scheduler(scrape_func, daily_reminder_func) -> AsyncIOScheduler:
         replace_existing=True,
     )
 
-    # Daily reminder at 8:00 about today's events
+    # Every 15 min: check for events starting in ~2h, send Telegram reminders
     scheduler.add_job(
-        daily_reminder_func,
-        CronTrigger(hour=8, minute=0),
-        id="daily_reminder",
+        reminder_func,
+        IntervalTrigger(minutes=15),
+        id="event_reminder",
         replace_existing=True,
     )
 
-    log.info(f"Scheduler configured: scrape={settings.scrape_schedule}, daily reminder=8:00")
+    log.info(f"Scheduler configured: scrape={settings.scrape_schedule}, reminders=every 15min")
     return scheduler

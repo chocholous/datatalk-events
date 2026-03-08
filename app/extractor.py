@@ -70,7 +70,7 @@ Return ONLY valid JSON array, no markdown."""
                 }
             )
 
-        async with httpx.AsyncClient(timeout=60) as client:
+        async with httpx.AsyncClient(timeout=120) as client:
             response = await client.post(
                 OPENAI_API_URL,
                 headers={"Authorization": f"Bearer {settings.openai_api_key}"},

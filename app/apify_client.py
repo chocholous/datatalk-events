@@ -32,18 +32,38 @@ async def _get_dataset_items(
     return resp.json()
 
 
+CRAWL_BATCH_SIZE = 4
+
+
 async def crawl_urls(
     urls: list[str], *, timeout: int = 300, use_residential_proxy: bool = True
 ) -> dict[str, dict]:
     """Batch-crawl URLs using Apify Website Content Crawler with Playwright.
 
-    Returns a dict mapping normalized original URL -> result item.
-    Matches crawl results back to input URLs using URL normalization
-    to handle redirects (e.g. example.com -> www.example.com).
+    Splits URLs into batches to avoid Apify memory limits.
+    Returns a dict mapping original URL -> result item.
     """
     settings = get_settings()
     if not settings.apify_api_token or not urls:
         return {}
+
+    all_results: dict[str, dict] = {}
+
+    for i in range(0, len(urls), CRAWL_BATCH_SIZE):
+        batch = urls[i : i + CRAWL_BATCH_SIZE]
+        log.warning("Crawling batch %d-%d of %d URLs", i + 1, i + len(batch), len(urls))
+        batch_results = await _crawl_batch(batch, timeout=timeout, use_residential_proxy=use_residential_proxy)
+        all_results.update(batch_results)
+
+    log.warning("Apify crawled total: matched %d/%d input URLs", len(all_results), len(urls))
+    return all_results
+
+
+async def _crawl_batch(
+    urls: list[str], *, timeout: int = 300, use_residential_proxy: bool = True
+) -> dict[str, dict]:
+    """Crawl a single batch of URLs."""
+    settings = get_settings()
 
     actor_id = "apify~website-content-crawler"
     api_url = f"{APIFY_API_BASE}/acts/{actor_id}/runs"
@@ -101,26 +121,19 @@ async def crawl_urls(
                     result[original_url] = norm_to_item[norm]
 
             log.warning(
-                "Apify crawled %d items, matched %d/%d input URLs",
+                "Batch: crawled %d items, matched %d/%d",
                 len(items), len(result), len(urls),
             )
 
-            # If many unmatched, log the mismatches for debugging
             if len(result) < len(urls):
                 crawled_norms = set(norm_to_item.keys())
                 input_norms = {_normalize_url(u): u for u in urls}
                 unmatched_inputs = set(input_norms.keys()) - crawled_norms
                 unmatched_crawled = crawled_norms - set(input_norms.keys())
                 if unmatched_inputs:
-                    log.warning(
-                        "Unmatched input URLs: %s",
-                        [input_norms[n] for n in list(unmatched_inputs)[:5]],
-                    )
+                    log.warning("Unmatched input: %s", [input_norms[n] for n in list(unmatched_inputs)[:5]])
                 if unmatched_crawled:
-                    log.warning(
-                        "Unmatched crawl URLs: %s",
-                        list(unmatched_crawled)[:5],
-                    )
+                    log.warning("Unmatched crawl: %s", list(unmatched_crawled)[:5])
 
             return result
     except Exception:

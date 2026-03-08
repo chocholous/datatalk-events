@@ -66,9 +66,12 @@ Return ONLY valid JSON array, no markdown."""
                     "date_text": event.get("date_text"),
                     "json_ld": event.get("json_ld"),
                     "og_meta": event.get("og_meta"),
-                    "markdown": (event.get("markdown") or "")[:3000],
+                    "markdown": (event.get("markdown") or "")[:1500],
                 }
             )
+
+        payload_size = sum(len(str(e)) for e in formatted)
+        log.warning("Sending %d events to OpenAI (%d chars payload)", len(formatted), payload_size)
 
         async with httpx.AsyncClient(timeout=120) as client:
             response = await client.post(

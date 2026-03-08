@@ -24,18 +24,14 @@ PREFERRED_DOMAINS = {"luma.com", "meetup.com", "eventbrite.com", "lu.ma", "allev
 
 
 class DetailFetcher:
-    """Fetch event detail pages and extract structured data."""
+    """Fetch event detail pages and extract structured data.
+
+    Primary: Apify Website Content Crawler (Playwright + residential proxy).
+    Fallback: direct httpx fetch + BeautifulSoup parsing.
+    """
 
     async def fetch_details(self, events: list[dict]) -> list[dict]:
-        """Concurrently fetch detail pages for all events.
-
-        For each event, fetches the URL, extracts:
-        - json_ld: parsed JSON-LD data (dict or None)
-        - og_meta: OpenGraph meta tags (dict)
-        - markdown: HTML body converted to markdown (truncated)
-
-        Returns enriched event dicts with these new keys.
-        """
+        """Concurrently fetch detail pages for all events."""
         settings = get_settings()
         sem = asyncio.Semaphore(settings.scrape_detail_concurrency)
         async with httpx.AsyncClient(
@@ -59,48 +55,45 @@ class DetailFetcher:
         if not url:
             return enriched
 
+        # --- Primary: Apify with Playwright + residential proxy ---
+        apify_result = await run_website_content_crawler(
+            url, use_residential_proxy=True
+        )
+        if apify_result and apify_result.get("markdown", "").strip():
+            log.info("Apify fetched: %s", url)
+            enriched["markdown"] = apify_result["markdown"][:MARKDOWN_MAX_CHARS]
+            # Also try to extract structured data from Apify HTML if available
+            html = apify_result.get("html", "")
+            if html:
+                soup = BeautifulSoup(html, "html.parser")
+                enriched["json_ld"] = self._extract_json_ld(soup)
+                enriched["og_meta"] = self._extract_og_meta(soup)
+            return enriched
+
+        log.info("Apify failed, falling back to httpx for: %s", url)
+
+        # --- Fallback: direct httpx fetch ---
         try:
             async with sem:
                 response = await client.get(url)
                 response.raise_for_status()
         except Exception:
-            log.warning("Failed to fetch detail page: %s", url, exc_info=True)
+            log.warning("httpx fallback also failed: %s", url, exc_info=True)
             return enriched
 
         soup = BeautifulSoup(response.text, "html.parser")
 
-        # Detect blocked/login pages and try Apify fallback, then web search
+        # Detect blocked/login pages and try web search fallback
         if self._is_blocked(soup, url):
             title = event.get("title", "")
-            log.info("Page blocked (%s), trying Apify fallback", url)
-            apify_result = await run_website_content_crawler(
-                url, use_residential_proxy=True
-            )
-            if apify_result and apify_result.get("markdown"):
-                log.info("Apify fallback succeeded for: %s", url)
-                enriched["markdown"] = apify_result["markdown"][:MARKDOWN_MAX_CHARS]
-                return enriched
-
-            log.info("Apify fallback failed, searching for: %s", title)
+            log.info("Page blocked (%s), searching for: %s", url, title)
             fallback_soup = await self._search_fallback(title, url, sem, client)
             if fallback_soup:
                 soup = fallback_soup
 
         enriched["json_ld"] = self._extract_json_ld(soup)
         enriched["og_meta"] = self._extract_og_meta(soup)
-        markdown = self._html_to_markdown(soup)
-
-        # If content is too thin (JS SPA not rendered), try Apify with Playwright
-        if len(markdown.strip()) < 200 and not enriched["json_ld"]:
-            log.info("Thin content (%d chars), trying Apify for: %s", len(markdown), url)
-            apify_result = await run_website_content_crawler(
-                url, use_residential_proxy=True
-            )
-            if apify_result and apify_result.get("markdown"):
-                log.info("Apify rendered JS content for: %s", url)
-                markdown = apify_result["markdown"]
-
-        enriched["markdown"] = markdown[:MARKDOWN_MAX_CHARS]
+        enriched["markdown"] = self._html_to_markdown(soup)
         return enriched
 
     def _is_blocked(self, soup: BeautifulSoup, url: str) -> bool:
@@ -135,18 +128,13 @@ class DetailFetcher:
         sem: asyncio.Semaphore,
         client: httpx.AsyncClient,
     ) -> BeautifulSoup | None:
-        """Search for event by title and scrape the best alternative page.
-
-        Prioritizes pages with JSON-LD Event data (luma.com, meetup.com, etc.)
-        over generic pages.
-        """
+        """Search for event by title and scrape the best alternative page."""
         try:
             from ddgs import DDGS
             from urllib.parse import urlparse
 
             original_domain = urlparse(original_url).netloc.lower()
 
-            # Try exact title first, then broader query
             queries = [f'"{title}"', f"{title} event"]
             candidates: list[tuple[BeautifulSoup, str]] = []
 
@@ -154,7 +142,6 @@ class DetailFetcher:
                 with DDGS() as ddgs:
                     results = list(ddgs.text(query, max_results=8))
 
-                # Sort: preferred event platforms first
                 def _domain_priority(r):
                     domain = urlparse(r.get("href", "")).netloc.lower()
                     return 0 if any(domain.endswith(pd) for pd in PREFERRED_DOMAINS) else 1
@@ -178,7 +165,6 @@ class DetailFetcher:
                         alt_soup = BeautifulSoup(resp.text, "html.parser")
                         if self._is_blocked(alt_soup, alt_url):
                             continue
-                        # Best case: page has JSON-LD Event data — use immediately
                         if self._extract_json_ld(alt_soup):
                             log.info("Fallback with JSON-LD found: %s", alt_url)
                             return alt_soup
@@ -187,8 +173,6 @@ class DetailFetcher:
                         log.debug("Fallback URL failed: %s", alt_url, exc_info=True)
                         continue
 
-                # If we found a page with JSON-LD in this query, we already returned
-                # If we have any candidates, use the first one
                 if candidates:
                     best_soup, best_url = candidates[0]
                     log.info("Fallback (no JSON-LD): %s", best_url)
@@ -207,17 +191,14 @@ class DetailFetcher:
             except (json.JSONDecodeError, TypeError):
                 continue
 
-            # Direct Event object
             if isinstance(data, dict) and data.get("@type") == "Event":
                 return data
 
-            # @graph array
             if isinstance(data, dict) and "@graph" in data:
                 for item in data["@graph"]:
                     if isinstance(item, dict) and item.get("@type") == "Event":
                         return item
 
-            # Top-level array
             if isinstance(data, list):
                 for item in data:
                     if isinstance(item, dict) and item.get("@type") == "Event":
@@ -237,14 +218,12 @@ class DetailFetcher:
 
     def _html_to_markdown(self, soup: BeautifulSoup) -> str:
         """Convert page body to markdown via markdownify, truncate to max_chars."""
-        # Find main content element
         content_el = (
             soup.find("main") or soup.find("article") or soup.find("body")
         )
         if not content_el:
             return ""
 
-        # Remove noise elements
         for tag_name in ("nav", "footer", "header", "script", "style"):
             for tag in content_el.find_all(tag_name):
                 tag.decompose()

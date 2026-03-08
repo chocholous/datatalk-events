@@ -6,6 +6,7 @@ import httpx
 from bs4 import BeautifulSoup
 from markdownify import markdownify
 
+from app.apify_client import run_website_content_crawler
 from app.config import get_settings
 
 log = logging.getLogger(__name__)
@@ -68,17 +69,38 @@ class DetailFetcher:
 
         soup = BeautifulSoup(response.text, "html.parser")
 
-        # Detect blocked/login pages and try web search fallback
+        # Detect blocked/login pages and try Apify fallback, then web search
         if self._is_blocked(soup, url):
             title = event.get("title", "")
-            log.info("Page blocked (%s), searching for: %s", url, title)
+            log.info("Page blocked (%s), trying Apify fallback", url)
+            apify_result = await run_website_content_crawler(
+                url, use_residential_proxy=True
+            )
+            if apify_result and apify_result.get("markdown"):
+                log.info("Apify fallback succeeded for: %s", url)
+                enriched["markdown"] = apify_result["markdown"][:MARKDOWN_MAX_CHARS]
+                return enriched
+
+            log.info("Apify fallback failed, searching for: %s", title)
             fallback_soup = await self._search_fallback(title, url, sem, client)
             if fallback_soup:
                 soup = fallback_soup
 
         enriched["json_ld"] = self._extract_json_ld(soup)
         enriched["og_meta"] = self._extract_og_meta(soup)
-        enriched["markdown"] = self._html_to_markdown(soup)
+        markdown = self._html_to_markdown(soup)
+
+        # If content is too thin (JS SPA not rendered), try Apify with Playwright
+        if len(markdown.strip()) < 200 and not enriched["json_ld"]:
+            log.info("Thin content (%d chars), trying Apify for: %s", len(markdown), url)
+            apify_result = await run_website_content_crawler(
+                url, use_residential_proxy=True
+            )
+            if apify_result and apify_result.get("markdown"):
+                log.info("Apify rendered JS content for: %s", url)
+                markdown = apify_result["markdown"]
+
+        enriched["markdown"] = markdown[:MARKDOWN_MAX_CHARS]
         return enriched
 
     def _is_blocked(self, soup: BeautifulSoup, url: str) -> bool:

@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     admin_username: str = "admin"
     admin_password: str = ""
     hetzner_api_key: str = ""
+    apify_api_token: str = ""
     scrape_detail_concurrency: int = 5
     scrape_detail_timeout: int = 15
 

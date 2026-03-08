@@ -14,6 +14,7 @@ class TestSettings:
         assert settings.telegram_bot_token == ""
         assert settings.telegram_channel_id == ""
         assert settings.telegram_invite_link == ""
+        assert settings.apify_api_token == ""
         assert settings.google_calendar_id == ""
         assert settings.secret_key == ""
         assert settings.webhook_url == "http://localhost:8000"

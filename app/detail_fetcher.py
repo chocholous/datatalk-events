@@ -54,12 +54,11 @@ class DetailFetcher:
         #    Stop on 402 (credit/rate limit) to avoid burning through quota
         rag_failed = False
         for event in missing:
-            title = event.get("title", "")
             markdown = ""
             if not rag_failed:
-                log.warning("RAG fallback for: %s", title)
+                log.warning("RAG fallback for: %s", event.get("title", ""))
                 try:
-                    markdown = await self._rag_fallback(title)
+                    markdown = await self._rag_fallback(event)
                 except httpx.HTTPStatusError as exc:
                     if exc.response.status_code == 402:
                         log.warning("Apify 402 — stopping RAG fallback for remaining %d events", len(missing) - missing.index(event))
@@ -75,12 +74,20 @@ class DetailFetcher:
 
         return enriched
 
-    async def _rag_fallback(self, title: str) -> str:
-        """Search for event by title using Apify RAG Web Browser."""
-        if not title:
+    async def _rag_fallback(self, event: dict) -> str:
+        """Search for event using all available info via Apify RAG Web Browser."""
+        title = event.get("title", "")
+        url = event.get("url", "")
+        date_text = event.get("date_text", "")
+
+        if not title and not url:
             return ""
 
-        results = await rag_search(f"{title} event", max_results=3)
+        # Build query from all available info
+        query_parts = [title, date_text, url]
+        query = " ".join(p for p in query_parts if p)
+
+        results = await rag_search(query, max_results=3)
         if not results:
             log.warning("RAG search found nothing for: %s", title)
             return ""

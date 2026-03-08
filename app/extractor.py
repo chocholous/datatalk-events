@@ -10,7 +10,7 @@ from app.config import get_settings
 log = logging.getLogger(__name__)
 
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
-LLM_BATCH_SIZE = 4
+LLM_BATCH_SIZE = 1
 
 
 class EventExtractor:
@@ -67,7 +67,7 @@ Return ONLY valid JSON array, no markdown."""
                     "date_text": event.get("date_text"),
                     "json_ld": event.get("json_ld"),
                     "og_meta": event.get("og_meta"),
-                    "markdown": (event.get("markdown") or "")[:3000],
+                    "markdown": event.get("markdown") or "",
                 }
             )
 

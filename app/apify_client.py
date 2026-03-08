@@ -97,6 +97,17 @@ async def _crawl_batch(
             resp.raise_for_status()
             run_data = resp.json().get("data", resp.json())
 
+            run_status = run_data.get("status", "UNKNOWN")
+            run_id = run_data.get("id", "?")
+            log.warning(
+                "Apify run %s finished with status: %s",
+                run_id, run_status,
+            )
+            if run_status not in ("SUCCEEDED", "RUNNING"):
+                status_msg = run_data.get("statusMessage", "")
+                log.warning("Apify run failed: %s — %s", run_status, status_msg)
+                return {}
+
             dataset_id = run_data.get("defaultDatasetId")
             if not dataset_id:
                 log.warning("No dataset ID in Apify crawl response")

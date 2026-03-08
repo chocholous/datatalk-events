@@ -31,20 +31,16 @@ def _make_mocks(raw_events, enriched_events):
     mock_scraper = AsyncMock()
     mock_scraper.scrape.return_value = raw_events
 
-    mock_detail_fetcher = AsyncMock()
-    mock_detail_fetcher.fetch_details.return_value = raw_events
+    mock_enricher = AsyncMock()
+    mock_enricher.enrich_events.return_value = enriched_events
 
-    mock_extractor = AsyncMock()
-    mock_extractor.extract.return_value = enriched_events
-
-    return mock_scraper, mock_detail_fetcher, mock_extractor
+    return mock_scraper, mock_enricher
 
 
-def _pipeline_patches(mock_scraper, mock_detail_fetcher, mock_extractor):
+def _pipeline_patches(mock_scraper, mock_enricher):
     return (
         patch("app.notifications.pipeline.Scraper", return_value=mock_scraper),
-        patch("app.notifications.pipeline.DetailFetcher", return_value=mock_detail_fetcher),
-        patch("app.notifications.pipeline.EventExtractor", return_value=mock_extractor),
+        patch("app.notifications.pipeline.EventEnricher", return_value=mock_enricher),
         patch("app.notifications.pipeline.sync_events_to_google_calendar", return_value=1),
     )
 
@@ -75,13 +71,12 @@ async def test_pipeline_full_flow(pipeline_session):
         }
     ]
 
-    mock_scraper, mock_detail_fetcher, mock_extractor = _make_mocks(raw_events, enriched_events)
+    mock_scraper, mock_enricher = _make_mocks(raw_events, enriched_events)
     mock_gcal = patch("app.notifications.pipeline.sync_events_to_google_calendar", return_value=1)
 
     with (
         patch("app.notifications.pipeline.Scraper", return_value=mock_scraper),
-        patch("app.notifications.pipeline.DetailFetcher", return_value=mock_detail_fetcher),
-        patch("app.notifications.pipeline.EventExtractor", return_value=mock_extractor),
+        patch("app.notifications.pipeline.EventEnricher", return_value=mock_enricher),
         mock_gcal as gcal_mock,
     ):
         await run_scrape_and_sync(pipeline_session)
@@ -110,10 +105,7 @@ async def test_pipeline_no_events(pipeline_session):
     mock_scraper = AsyncMock()
     mock_scraper.scrape.return_value = []
 
-    with (
-        patch("app.notifications.pipeline.Scraper", return_value=mock_scraper),
-        patch("app.notifications.pipeline.DetailFetcher"),
-    ):
+    with patch("app.notifications.pipeline.Scraper", return_value=mock_scraper):
         await run_scrape_and_sync(pipeline_session)
 
     events = pipeline_session.exec(select(Event)).all()
@@ -134,7 +126,6 @@ async def test_pipeline_creates_scrape_run_on_failure(pipeline_session):
 
     with (
         patch("app.notifications.pipeline.Scraper", return_value=mock_scraper),
-        patch("app.notifications.pipeline.DetailFetcher"),
         pytest.raises(RuntimeError, match="scrape failed"),
     ):
         await run_scrape_and_sync(pipeline_session)
@@ -147,21 +138,20 @@ async def test_pipeline_creates_scrape_run_on_failure(pipeline_session):
 
 
 @pytest.mark.anyio
-async def test_pipeline_calls_detail_fetcher(pipeline_session):
-    """Verify DetailFetcher.fetch_details is called with raw events."""
+async def test_pipeline_calls_enricher(pipeline_session):
+    """Verify EventEnricher.enrich_events is called with raw events."""
     raw_events = [{"title": "Ev1", "url": "https://example.com/1"}]
     enriched_events = [
         {"title": "Ev1", "url": "https://example.com/1", "date": FUTURE_DATE, "type": "meetup"}
     ]
 
-    mock_scraper, mock_detail_fetcher, mock_extractor = _make_mocks(raw_events, enriched_events)
-    p = _pipeline_patches(mock_scraper, mock_detail_fetcher, mock_extractor)
+    mock_scraper, mock_enricher = _make_mocks(raw_events, enriched_events)
+    p = _pipeline_patches(mock_scraper, mock_enricher)
 
-    with p[0], p[1], p[2], p[3]:
+    with p[0], p[1], p[2]:
         await run_scrape_and_sync(pipeline_session)
 
-    mock_detail_fetcher.fetch_details.assert_called_once_with(raw_events)
-    mock_extractor.extract.assert_called_once()
+    mock_enricher.enrich_events.assert_called_once_with(raw_events)
 
 
 @pytest.mark.anyio
@@ -182,10 +172,10 @@ async def test_pipeline_upserts_events(pipeline_session):
     raw_events = [{"title": "New Title", "url": url}]
     enriched_events = [{"title": "New Title", "url": url, "location": "New Location", "type": "meetup"}]
 
-    mock_scraper, mock_detail_fetcher, mock_extractor = _make_mocks(raw_events, enriched_events)
-    p = _pipeline_patches(mock_scraper, mock_detail_fetcher, mock_extractor)
+    mock_scraper, mock_enricher = _make_mocks(raw_events, enriched_events)
+    p = _pipeline_patches(mock_scraper, mock_enricher)
 
-    with p[0], p[1], p[2], p[3]:
+    with p[0], p[1], p[2]:
         await run_scrape_and_sync(pipeline_session)
 
     events_after = pipeline_session.exec(select(Event)).all()
@@ -211,10 +201,10 @@ async def test_pipeline_saves_new_fields(pipeline_session):
         }
     ]
 
-    mock_scraper, mock_detail_fetcher, mock_extractor = _make_mocks(raw_events, enriched_events)
-    p = _pipeline_patches(mock_scraper, mock_detail_fetcher, mock_extractor)
+    mock_scraper, mock_enricher = _make_mocks(raw_events, enriched_events)
+    p = _pipeline_patches(mock_scraper, mock_enricher)
 
-    with p[0], p[1], p[2], p[3]:
+    with p[0], p[1], p[2]:
         await run_scrape_and_sync(pipeline_session)
 
     events = pipeline_session.exec(select(Event)).all()

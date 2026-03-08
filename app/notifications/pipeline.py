@@ -5,8 +5,7 @@ from datetime import datetime, timedelta
 
 from sqlmodel import Session, select
 
-from app.detail_fetcher import DetailFetcher
-from app.extractor import EventExtractor
+from app.event_enricher import EventEnricher
 from app.google_calendar import sync_events_to_google_calendar
 from app.models import Event, ScrapeRun, ScrapeRunStatus
 from app.notifications.telegram import TelegramNotifier, format_event_reminder
@@ -44,10 +43,9 @@ async def run_scrape_and_sync(session: Session) -> None:
 
     try:
         scraper = Scraper()
-        detail_fetcher = DetailFetcher()
-        extractor = EventExtractor()
+        enricher = EventEnricher()
 
-        # 1. Scrape
+        # 1. Scrape event listings
         raw_events = await scraper.scrape()
         if not raw_events:
             log.warning("No events found")
@@ -57,11 +55,8 @@ async def run_scrape_and_sync(session: Session) -> None:
             session.commit()
             return
 
-        # 1.5 Fetch detail pages
-        enriched_raw = await detail_fetcher.fetch_details(raw_events)
-
-        # 2. LLM extraction
-        enriched = await extractor.extract(enriched_raw)
+        # 2. Quality-driven enrichment (fetch + LLM extract per event)
+        enriched = await enricher.enrich_events(raw_events)
 
         # 3. Upsert events
         new_count = 0

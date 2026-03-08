@@ -36,7 +36,7 @@ class Scraper:
 
     async def scrape(self) -> list[dict]:
         settings = get_settings()
-        log.info("Scraping %s via Apify RAG browser", settings.scrape_url)
+        log.warning("Scraping %s via Apify RAG browser", settings.scrape_url)
 
         results = await rag_search(settings.scrape_url, max_results=1)
         if not results:
@@ -44,6 +44,7 @@ class Scraper:
             return []
 
         markdown = results[0].get("markdown", "")
+        log.warning("RAG browser returned %d chars of markdown", len(markdown))
         events = self.parse_events(markdown)
-        log.info("Found %d events", len(events))
+        log.warning("Parsed %d events from markdown", len(events))
         return events

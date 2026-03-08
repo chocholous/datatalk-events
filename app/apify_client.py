@@ -1,6 +1,7 @@
 """Apify REST API client for running Actors."""
 
 import logging
+from urllib.parse import urlparse
 
 import httpx
 
@@ -9,6 +10,14 @@ from app.config import get_settings
 log = logging.getLogger(__name__)
 
 APIFY_API_BASE = "https://api.apify.com/v2"
+
+
+def _normalize_url(url: str) -> str:
+    """Normalize URL for matching (strip www., trailing slash, force lowercase)."""
+    parsed = urlparse(url)
+    host = parsed.netloc.lower().removeprefix("www.")
+    path = parsed.path.rstrip("/")
+    return f"{parsed.scheme}://{host}{path}"
 
 
 async def _get_dataset_items(
@@ -28,8 +37,9 @@ async def crawl_urls(
 ) -> dict[str, dict]:
     """Batch-crawl URLs using Apify Website Content Crawler with Playwright.
 
-    Returns a dict mapping URL -> result item (with 'markdown', 'url', etc.).
-    Missing URLs are not included in the result.
+    Returns a dict mapping normalized original URL -> result item.
+    Matches crawl results back to input URLs using URL normalization
+    to handle redirects (e.g. example.com -> www.example.com).
     """
     settings = get_settings()
     if not settings.apify_api_token or not urls:
@@ -76,13 +86,42 @@ async def crawl_urls(
                 client, dataset_id, settings.apify_api_token, limit=len(urls)
             )
 
-            # Map results by URL
-            result = {}
+            # Build normalized URL -> item mapping from crawl results
+            norm_to_item: dict[str, dict] = {}
             for item in items:
                 item_url = item.get("url", "")
                 if item_url:
-                    result[item_url] = item
-            log.info("Apify crawled %d/%d URLs", len(result), len(urls))
+                    norm_to_item[_normalize_url(item_url)] = item
+
+            # Match original input URLs to crawl results
+            result: dict[str, dict] = {}
+            for original_url in urls:
+                norm = _normalize_url(original_url)
+                if norm in norm_to_item:
+                    result[original_url] = norm_to_item[norm]
+
+            log.warning(
+                "Apify crawled %d items, matched %d/%d input URLs",
+                len(items), len(result), len(urls),
+            )
+
+            # If many unmatched, log the mismatches for debugging
+            if len(result) < len(urls):
+                crawled_norms = set(norm_to_item.keys())
+                input_norms = {_normalize_url(u): u for u in urls}
+                unmatched_inputs = set(input_norms.keys()) - crawled_norms
+                unmatched_crawled = crawled_norms - set(input_norms.keys())
+                if unmatched_inputs:
+                    log.warning(
+                        "Unmatched input URLs: %s",
+                        [input_norms[n] for n in list(unmatched_inputs)[:5]],
+                    )
+                if unmatched_crawled:
+                    log.warning(
+                        "Unmatched crawl URLs: %s",
+                        list(unmatched_crawled)[:5],
+                    )
+
             return result
     except Exception:
         log.warning("Apify batch crawl failed", exc_info=True)
@@ -126,6 +165,12 @@ async def rag_search(query: str, *, max_results: int = 3, timeout: int = 120) ->
                 client, dataset_id, settings.apify_api_token, limit=max_results
             )
             return items
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 402:
+            log.warning("Apify credit/rate limit hit (402) for: %s", query)
+            raise  # Re-raise so caller can stop retrying
+        log.warning("Apify RAG search failed for: %s", query, exc_info=True)
+        return []
     except Exception:
         log.warning("Apify RAG search failed for: %s", query, exc_info=True)
         return []

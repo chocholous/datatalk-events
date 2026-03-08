@@ -1,5 +1,7 @@
 import logging
 
+import httpx
+
 from app.apify_client import crawl_urls, rag_search
 
 log = logging.getLogger(__name__)
@@ -15,10 +17,7 @@ class DetailFetcher:
     """
 
     async def fetch_details(self, events: list[dict]) -> list[dict]:
-        """Fetch detail pages for all events.
-
-        Returns enriched event dicts with 'markdown' key.
-        """
+        """Fetch detail pages for all events."""
         if not events:
             return []
 
@@ -45,11 +44,26 @@ class DetailFetcher:
             else:
                 missing.append(event)
 
+        if missing:
+            log.warning(
+                "Batch crawl missed %d/%d events, trying RAG fallback",
+                len(missing), len(events),
+            )
+
         # 3. Fallback: RAG search for events that weren't crawled
+        #    Stop on 402 (credit/rate limit) to avoid burning through quota
+        rag_failed = False
         for event in missing:
             title = event.get("title", "")
-            log.info("Crawl missed %s, trying RAG search: %s", event.get("url"), title)
-            markdown = await self._rag_fallback(title)
+            markdown = ""
+            if not rag_failed:
+                log.warning("RAG fallback for: %s", title)
+                try:
+                    markdown = await self._rag_fallback(title)
+                except httpx.HTTPStatusError as exc:
+                    if exc.response.status_code == 402:
+                        log.warning("Apify 402 — stopping RAG fallback for remaining %d events", len(missing) - missing.index(event))
+                        rag_failed = True
             enriched.append(
                 {
                     **event,
@@ -71,8 +85,7 @@ class DetailFetcher:
             log.warning("RAG search found nothing for: %s", title)
             return ""
 
-        # Pick the result with the most content
         best = max(results, key=lambda r: len(r.get("markdown", "")))
         markdown = best.get("markdown", "")
-        log.info("RAG search found content for: %s (%d chars)", title, len(markdown))
+        log.warning("RAG search found content for: %s (%d chars)", title, len(markdown))
         return markdown[:MARKDOWN_MAX_CHARS]

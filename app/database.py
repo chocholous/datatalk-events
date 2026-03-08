@@ -34,6 +34,12 @@ def migrate_db(engine):
             conn.execute(
                 sqlalchemy.text("ALTER TABLE event ADD COLUMN image_url TEXT")
             )
+        if "reminder_sent" not in columns:
+            conn.execute(
+                sqlalchemy.text(
+                    "ALTER TABLE event ADD COLUMN reminder_sent BOOLEAN DEFAULT 0"
+                )
+            )
 
 
 def get_session(engine) -> Generator[Session, None, None]:

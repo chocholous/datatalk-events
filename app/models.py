@@ -19,6 +19,7 @@ class Event(SQLModel, table=True):
     speakers: str = "[]"  # JSON array of speaker names
     organizer: str | None = None
     image_url: str | None = None
+    reminder_sent: bool = False
     scraped_at: datetime = Field(default_factory=datetime.utcnow)
 
 

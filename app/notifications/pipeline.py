@@ -147,7 +147,11 @@ async def send_event_reminders(session: Session) -> None:
     window_end = now + timedelta(hours=2, minutes=15)
 
     upcoming = session.exec(
-        select(Event).where(Event.date >= window_start, Event.date <= window_end)
+        select(Event).where(
+            Event.date >= window_start,
+            Event.date <= window_end,
+            Event.reminder_sent == False,  # noqa: E712
+        )
     ).all()
 
     if not upcoming:
@@ -156,6 +160,9 @@ async def send_event_reminders(session: Session) -> None:
     telegram = TelegramNotifier()
     text = format_event_reminder(list(upcoming))
     if await telegram.send_to_channel(text):
+        for event in upcoming:
+            event.reminder_sent = True
+        session.commit()
         log.info(f"Sent reminder for {len(upcoming)} events starting in ~2h")
     else:
         log.warning("Failed to send reminder to channel")

@@ -247,6 +247,32 @@ async def test_event_reminder_sends_to_channel(pipeline_session):
 
     mock_telegram.send_to_channel.assert_called_once()
 
+    # Verify reminder_sent flag is set
+    pipeline_session.refresh(event)
+    assert event.reminder_sent is True
+
+
+@pytest.mark.anyio
+async def test_event_reminder_not_sent_twice(pipeline_session):
+    """Reminder is not sent again for events already reminded."""
+    now = datetime.utcnow()
+    event = Event(
+        external_id="already-1",
+        title="Already Reminded",
+        url="https://example.com/already",
+        date=now + timedelta(hours=2),
+        reminder_sent=True,
+    )
+    pipeline_session.add(event)
+    pipeline_session.commit()
+
+    mock_telegram = AsyncMock()
+
+    with patch("app.notifications.pipeline.TelegramNotifier", return_value=mock_telegram):
+        await send_event_reminders(pipeline_session)
+
+    mock_telegram.send_to_channel.assert_not_called()
+
 
 @pytest.mark.anyio
 async def test_event_reminder_skips_distant_events(pipeline_session):

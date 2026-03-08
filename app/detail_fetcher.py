@@ -1,232 +1,78 @@
-import asyncio
-import json
 import logging
 
-import httpx
-from bs4 import BeautifulSoup
-from markdownify import markdownify
-
-from app.apify_client import run_website_content_crawler
-from app.config import get_settings
+from app.apify_client import crawl_urls, rag_search
 
 log = logging.getLogger(__name__)
 
 MARKDOWN_MAX_CHARS = 3000
 
-# Domains known to block scrapers
-BLOCKED_DOMAINS = {"linkedin.com", "www.linkedin.com"}
-
-# Signals that a page is a login/block page rather than real content
-BLOCKED_TITLE_KEYWORDS = ["login", "sign in", "log in", "přihlásit", "captcha", "verify"]
-
-# Event platforms to prioritize in search results (sorted first)
-PREFERRED_DOMAINS = {"luma.com", "meetup.com", "eventbrite.com", "lu.ma", "allevents.in", "konfeo.com"}
-
 
 class DetailFetcher:
-    """Fetch event detail pages and extract structured data.
+    """Fetch event detail pages using Apify.
 
-    Primary: Apify Website Content Crawler (Playwright + residential proxy).
-    Fallback: direct httpx fetch + BeautifulSoup parsing.
+    Primary: Apify Website Content Crawler (batch, Playwright + residential proxy).
+    Fallback: Apify RAG Web Browser (search by event title).
     """
 
     async def fetch_details(self, events: list[dict]) -> list[dict]:
-        """Concurrently fetch detail pages for all events."""
-        settings = get_settings()
-        sem = asyncio.Semaphore(settings.scrape_detail_concurrency)
-        async with httpx.AsyncClient(
-            timeout=settings.scrape_detail_timeout,
-            follow_redirects=True,
-            headers={
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9,cs;q=0.8",
-            },
-        ) as client:
-            tasks = [self._fetch_single(event, sem, client) for event in events]
-            return await asyncio.gather(*tasks)
+        """Fetch detail pages for all events.
 
-    async def _fetch_single(
-        self, event: dict, sem: asyncio.Semaphore, client: httpx.AsyncClient
-    ) -> dict:
-        """Fetch and parse a single event detail page."""
-        enriched = {**event, "json_ld": None, "og_meta": {}, "markdown": ""}
-        url = event.get("url", "")
-        if not url:
-            return enriched
+        Returns enriched event dicts with 'markdown' key.
+        """
+        if not events:
+            return []
 
-        # --- Primary: Apify with Playwright + residential proxy ---
-        apify_result = await run_website_content_crawler(
-            url, use_residential_proxy=True
-        )
-        if apify_result and apify_result.get("markdown", "").strip():
-            log.info("Apify fetched: %s", url)
-            enriched["markdown"] = apify_result["markdown"][:MARKDOWN_MAX_CHARS]
-            # Also try to extract structured data from Apify HTML if available
-            html = apify_result.get("html", "")
-            if html:
-                soup = BeautifulSoup(html, "html.parser")
-                enriched["json_ld"] = self._extract_json_ld(soup)
-                enriched["og_meta"] = self._extract_og_meta(soup)
-            return enriched
+        urls = [e.get("url", "") for e in events if e.get("url")]
 
-        log.info("Apify failed, falling back to httpx for: %s", url)
+        # 1. Batch crawl all URLs via Apify Website Content Crawler
+        crawl_results = await crawl_urls(urls)
 
-        # --- Fallback: direct httpx fetch ---
-        try:
-            async with sem:
-                response = await client.get(url)
-                response.raise_for_status()
-        except Exception:
-            log.warning("httpx fallback also failed: %s", url, exc_info=True)
-            return enriched
+        # 2. Enrich events with results, collect missing ones
+        enriched = []
+        missing = []
+        for event in events:
+            url = event.get("url", "")
+            result = crawl_results.get(url)
+            if result and result.get("markdown", "").strip():
+                enriched.append(
+                    {
+                        **event,
+                        "json_ld": None,
+                        "og_meta": {},
+                        "markdown": result["markdown"][:MARKDOWN_MAX_CHARS],
+                    }
+                )
+            else:
+                missing.append(event)
 
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        # Detect blocked/login pages and try web search fallback
-        if self._is_blocked(soup, url):
+        # 3. Fallback: RAG search for events that weren't crawled
+        for event in missing:
             title = event.get("title", "")
-            log.info("Page blocked (%s), searching for: %s", url, title)
-            fallback_soup = await self._search_fallback(title, url, sem, client)
-            if fallback_soup:
-                soup = fallback_soup
+            log.info("Crawl missed %s, trying RAG search: %s", event.get("url"), title)
+            markdown = await self._rag_fallback(title)
+            enriched.append(
+                {
+                    **event,
+                    "json_ld": None,
+                    "og_meta": {},
+                    "markdown": markdown,
+                }
+            )
 
-        enriched["json_ld"] = self._extract_json_ld(soup)
-        enriched["og_meta"] = self._extract_og_meta(soup)
-        enriched["markdown"] = self._html_to_markdown(soup)
         return enriched
 
-    def _is_blocked(self, soup: BeautifulSoup, url: str) -> bool:
-        """Detect if a page is a login/captcha wall instead of real content."""
-        from urllib.parse import urlparse
-
-        # Known blocked domains
-        domain = urlparse(url).netloc.lower()
-        if any(domain.endswith(bd) for bd in BLOCKED_DOMAINS):
-            return True
-
-        # Check page title for block signals
-        title_tag = soup.find("title")
-        if title_tag:
-            title_text = title_tag.get_text().lower()
-            if any(kw in title_text for kw in BLOCKED_TITLE_KEYWORDS):
-                return True
-
-        # No JSON-LD Event data + very short body = likely blocked
-        has_json_ld = self._extract_json_ld(soup) is not None
-        body = soup.find("body")
-        body_text_len = len(body.get_text(strip=True)) if body else 0
-        if not has_json_ld and body_text_len < 200:
-            return True
-
-        return False
-
-    async def _search_fallback(
-        self,
-        title: str,
-        original_url: str,
-        sem: asyncio.Semaphore,
-        client: httpx.AsyncClient,
-    ) -> BeautifulSoup | None:
-        """Search for event by title and scrape the best alternative page."""
-        try:
-            from ddgs import DDGS
-            from urllib.parse import urlparse
-
-            original_domain = urlparse(original_url).netloc.lower()
-
-            queries = [f'"{title}"', f"{title} event"]
-            candidates: list[tuple[BeautifulSoup, str]] = []
-
-            for query in queries:
-                with DDGS() as ddgs:
-                    results = list(ddgs.text(query, max_results=8))
-
-                def _domain_priority(r):
-                    domain = urlparse(r.get("href", "")).netloc.lower()
-                    return 0 if any(domain.endswith(pd) for pd in PREFERRED_DOMAINS) else 1
-
-                results.sort(key=_domain_priority)
-
-                for result in results:
-                    alt_url = result.get("href", "")
-                    alt_domain = urlparse(alt_url).netloc.lower()
-
-                    if alt_domain == original_domain:
-                        continue
-                    if any(alt_domain.endswith(bd) for bd in BLOCKED_DOMAINS):
-                        continue
-
-                    log.info("Trying fallback URL: %s", alt_url)
-                    try:
-                        async with sem:
-                            resp = await client.get(alt_url)
-                            resp.raise_for_status()
-                        alt_soup = BeautifulSoup(resp.text, "html.parser")
-                        if self._is_blocked(alt_soup, alt_url):
-                            continue
-                        if self._extract_json_ld(alt_soup):
-                            log.info("Fallback with JSON-LD found: %s", alt_url)
-                            return alt_soup
-                        candidates.append((alt_soup, alt_url))
-                    except Exception:
-                        log.debug("Fallback URL failed: %s", alt_url, exc_info=True)
-                        continue
-
-                if candidates:
-                    best_soup, best_url = candidates[0]
-                    log.info("Fallback (no JSON-LD): %s", best_url)
-                    return best_soup
-
-            log.warning("No fallback found for: %s", title)
-        except Exception:
-            log.warning("Search fallback failed for: %s", title, exc_info=True)
-        return None
-
-    def _extract_json_ld(self, soup: BeautifulSoup) -> dict | None:
-        """Extract first Event-type JSON-LD from <script type='application/ld+json'>."""
-        for script in soup.select('script[type="application/ld+json"]'):
-            try:
-                data = json.loads(script.string or "")
-            except (json.JSONDecodeError, TypeError):
-                continue
-
-            if isinstance(data, dict) and data.get("@type") == "Event":
-                return data
-
-            if isinstance(data, dict) and "@graph" in data:
-                for item in data["@graph"]:
-                    if isinstance(item, dict) and item.get("@type") == "Event":
-                        return item
-
-            if isinstance(data, list):
-                for item in data:
-                    if isinstance(item, dict) and item.get("@type") == "Event":
-                        return item
-
-        return None
-
-    def _extract_og_meta(self, soup: BeautifulSoup) -> dict:
-        """Extract OpenGraph meta tags (og:title, og:description, og:image, etc.)."""
-        result = {}
-        for meta in soup.select('meta[property^="og:"]'):
-            prop = meta.get("property", "")
-            content = meta.get("content", "")
-            if prop and content:
-                result[prop] = content
-        return result
-
-    def _html_to_markdown(self, soup: BeautifulSoup) -> str:
-        """Convert page body to markdown via markdownify, truncate to max_chars."""
-        content_el = (
-            soup.find("main") or soup.find("article") or soup.find("body")
-        )
-        if not content_el:
+    async def _rag_fallback(self, title: str) -> str:
+        """Search for event by title using Apify RAG Web Browser."""
+        if not title:
             return ""
 
-        for tag_name in ("nav", "footer", "header", "script", "style"):
-            for tag in content_el.find_all(tag_name):
-                tag.decompose()
+        results = await rag_search(f"{title} event", max_results=3)
+        if not results:
+            log.warning("RAG search found nothing for: %s", title)
+            return ""
 
-        md = markdownify(str(content_el))
-        return md[:MARKDOWN_MAX_CHARS]
+        # Pick the result with the most content
+        best = max(results, key=lambda r: len(r.get("markdown", "")))
+        markdown = best.get("markdown", "")
+        log.info("RAG search found content for: %s (%d chars)", title, len(markdown))
+        return markdown[:MARKDOWN_MAX_CHARS]

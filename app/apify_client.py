@@ -11,73 +11,39 @@ log = logging.getLogger(__name__)
 APIFY_API_BASE = "https://api.apify.com/v2"
 
 
-async def run_rag_web_browser(url: str, *, timeout: int = 120) -> dict | None:
-    """Fetch a URL using Apify RAG Web Browser Actor.
+async def _get_dataset_items(
+    client: httpx.AsyncClient, dataset_id: str, token: str, *, limit: int = 100
+) -> list[dict]:
+    """Fetch items from an Apify dataset."""
+    resp = await client.get(
+        f"{APIFY_API_BASE}/datasets/{dataset_id}/items",
+        params={"token": token, "limit": limit},
+    )
+    resp.raise_for_status()
+    return resp.json()
 
-    Returns the first result item dict (with 'markdown', 'metadata', etc.)
-    or None on failure.
+
+async def crawl_urls(
+    urls: list[str], *, timeout: int = 300, use_residential_proxy: bool = True
+) -> dict[str, dict]:
+    """Batch-crawl URLs using Apify Website Content Crawler with Playwright.
+
+    Returns a dict mapping URL -> result item (with 'markdown', 'url', etc.).
+    Missing URLs are not included in the result.
     """
     settings = get_settings()
-    if not settings.apify_api_token:
-        return None
-
-    actor_id = "apify~rag-web-browser"
-    api_url = f"{APIFY_API_BASE}/acts/{actor_id}/runs"
-
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(
-                api_url,
-                params={"token": settings.apify_api_token, "waitForFinish": timeout},
-                json={
-                    "query": url,
-                    "maxResults": 1,
-                    "outputFormats": ["markdown"],
-                },
-            )
-            resp.raise_for_status()
-            run_data = resp.json()
-
-            dataset_id = run_data.get("defaultDatasetId")
-            if not dataset_id:
-                log.warning("No dataset ID in Apify run response")
-                return None
-
-            # Fetch dataset items
-            items_resp = await client.get(
-                f"{APIFY_API_BASE}/datasets/{dataset_id}/items",
-                params={"token": settings.apify_api_token, "limit": 1},
-            )
-            items_resp.raise_for_status()
-            items = items_resp.json()
-            if items:
-                return items[0]
-    except Exception:
-        log.warning("Apify RAG web browser failed for: %s", url, exc_info=True)
-    return None
-
-
-async def run_website_content_crawler(
-    url: str, *, timeout: int = 120, use_residential_proxy: bool = False
-) -> dict | None:
-    """Fetch a URL using Apify Website Content Crawler with Playwright.
-
-    Uses headless Firefox for full JS rendering. Optionally uses residential proxy.
-    Returns the first result item dict or None on failure.
-    """
-    settings = get_settings()
-    if not settings.apify_api_token:
-        return None
+    if not settings.apify_api_token or not urls:
+        return {}
 
     actor_id = "apify~website-content-crawler"
     api_url = f"{APIFY_API_BASE}/acts/{actor_id}/runs"
 
     input_data = {
-        "startUrls": [{"url": url}],
-        "crawlerType": "playwright:firefox",
+        "startUrls": [{"url": url} for url in urls],
+        "crawlerType": "playwright:adaptive",
         "maxCrawlDepth": 0,
-        "maxCrawlPages": 1,
-        "maxResults": 1,
+        "maxCrawlPages": len(urls),
+        "maxResults": len(urls),
         "saveMarkdown": True,
         "dynamicContentWaitSecs": 15,
     }
@@ -89,10 +55,13 @@ async def run_website_content_crawler(
         }
 
     try:
-        async with httpx.AsyncClient(timeout=timeout + 30) as client:
+        async with httpx.AsyncClient(timeout=timeout + 60) as client:
             resp = await client.post(
                 api_url,
-                params={"token": settings.apify_api_token, "waitForFinish": timeout},
+                params={
+                    "token": settings.apify_api_token,
+                    "waitForFinish": timeout,
+                },
                 json=input_data,
             )
             resp.raise_for_status()
@@ -100,17 +69,63 @@ async def run_website_content_crawler(
 
             dataset_id = run_data.get("defaultDatasetId")
             if not dataset_id:
-                log.warning("No dataset ID in Apify run response")
-                return None
+                log.warning("No dataset ID in Apify crawl response")
+                return {}
 
-            items_resp = await client.get(
-                f"{APIFY_API_BASE}/datasets/{dataset_id}/items",
-                params={"token": settings.apify_api_token, "limit": 1},
+            items = await _get_dataset_items(
+                client, dataset_id, settings.apify_api_token, limit=len(urls)
             )
-            items_resp.raise_for_status()
-            items = items_resp.json()
-            if items:
-                return items[0]
+
+            # Map results by URL
+            result = {}
+            for item in items:
+                item_url = item.get("url", "")
+                if item_url:
+                    result[item_url] = item
+            log.info("Apify crawled %d/%d URLs", len(result), len(urls))
+            return result
     except Exception:
-        log.warning("Apify website content crawler failed for: %s", url, exc_info=True)
-    return None
+        log.warning("Apify batch crawl failed", exc_info=True)
+        return {}
+
+
+async def rag_search(query: str, *, max_results: int = 3, timeout: int = 120) -> list[dict]:
+    """Search the web using Apify RAG Web Browser.
+
+    Returns a list of result items (with 'markdown', 'metadata', etc.).
+    """
+    settings = get_settings()
+    if not settings.apify_api_token or not query:
+        return []
+
+    actor_id = "apify~rag-web-browser"
+    api_url = f"{APIFY_API_BASE}/acts/{actor_id}/runs"
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout + 30) as client:
+            resp = await client.post(
+                api_url,
+                params={
+                    "token": settings.apify_api_token,
+                    "waitForFinish": timeout,
+                },
+                json={
+                    "query": query,
+                    "maxResults": max_results,
+                    "outputFormats": ["markdown"],
+                },
+            )
+            resp.raise_for_status()
+            run_data = resp.json()
+
+            dataset_id = run_data.get("defaultDatasetId")
+            if not dataset_id:
+                return []
+
+            items = await _get_dataset_items(
+                client, dataset_id, settings.apify_api_token, limit=max_results
+            )
+            return items
+    except Exception:
+        log.warning("Apify RAG search failed for: %s", query, exc_info=True)
+        return []

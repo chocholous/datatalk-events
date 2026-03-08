@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 
@@ -9,6 +10,7 @@ from app.config import get_settings
 log = logging.getLogger(__name__)
 
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+LLM_BATCH_SIZE = 4
 
 
 class EventExtractor:
@@ -49,7 +51,6 @@ Events to analyze:
 
 Return ONLY valid JSON array, no markdown."""
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=30))
     async def extract(self, events: list[dict]) -> list[dict]:
         settings = get_settings()
         if not settings.openai_api_key:
@@ -66,13 +67,27 @@ Return ONLY valid JSON array, no markdown."""
                     "date_text": event.get("date_text"),
                     "json_ld": event.get("json_ld"),
                     "og_meta": event.get("og_meta"),
-                    "markdown": (event.get("markdown") or "")[:1500],
+                    "markdown": (event.get("markdown") or "")[:3000],
                 }
             )
 
-        payload_size = sum(len(str(e)) for e in formatted)
-        log.warning("Sending %d events to OpenAI (%d chars payload)", len(formatted), payload_size)
+        # Split into batches to avoid OpenAI timeouts
+        all_results = []
+        for i in range(0, len(formatted), LLM_BATCH_SIZE):
+            batch = formatted[i : i + LLM_BATCH_SIZE]
+            payload_size = sum(len(str(e)) for e in batch)
+            log.warning(
+                "Sending batch %d-%d of %d events to OpenAI (%d chars payload)",
+                i + 1, i + len(batch), len(formatted), payload_size,
+            )
+            batch_results = await self._extract_batch(batch, settings)
+            all_results.extend(batch_results)
 
+        log.warning("LLM extraction complete: %d events", len(all_results))
+        return all_results
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=30))
+    async def _extract_batch(self, batch: list[dict], settings) -> list[dict]:
         async with httpx.AsyncClient(timeout=120) as client:
             response = await client.post(
                 OPENAI_API_URL,
@@ -83,7 +98,7 @@ Return ONLY valid JSON array, no markdown."""
                         {
                             "role": "user",
                             "content": self.PROMPT.format(
-                                events=json.dumps(formatted, ensure_ascii=False)
+                                events=json.dumps(batch, ensure_ascii=False)
                             ),
                         }
                     ],

@@ -83,7 +83,7 @@ def landing(request: Request, db: Session = Depends(get_db)):
         select(Event).where(Event.date >= now).order_by(Event.date).limit(20)
     ).all()
     calendar_link = get_calendar_share_link() if settings.google_calendar_id else None
-    telegram_link = f"https://t.me/{settings.telegram_channel_id.lstrip('@')}" if settings.telegram_channel_id else None
+    telegram_link = settings.telegram_invite_link or None
     return templates.TemplateResponse(
         "subscribe.html",
         {"request": request, "events": upcoming, "calendar_link": calendar_link, "telegram_link": telegram_link},

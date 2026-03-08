@@ -3,7 +3,7 @@ from app.config import Settings
 
 class TestSettings:
     def test_settings_loads_with_defaults(self) -> None:
-        settings = Settings()
+        settings = Settings(_env_file=None)
         assert settings.app_name == "DataTalk Events"
         assert settings.debug is False
         assert settings.database_url == "sqlite:///data/app.db"
@@ -13,6 +13,7 @@ class TestSettings:
         assert settings.openai_model == "gpt-4o-mini"
         assert settings.telegram_bot_token == ""
         assert settings.telegram_channel_id == ""
+        assert settings.telegram_invite_link == ""
         assert settings.google_calendar_id == ""
         assert settings.secret_key == ""
         assert settings.webhook_url == "http://localhost:8000"

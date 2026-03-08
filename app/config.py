@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
     telegram_bot_token: str = ""
     telegram_channel_id: str = ""
+    telegram_invite_link: str = ""
     google_calendar_id: str = ""
     google_service_account_json: str = ""
     secret_key: str = ""

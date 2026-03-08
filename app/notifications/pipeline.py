@@ -116,7 +116,7 @@ async def run_scrape_and_sync(session: Session) -> None:
 
         run.events_found = len(enriched)
         run.events_new = new_count
-        log.info(f"Events: {new_count} new, {updated_count} updated")
+        log.warning(f"Events: {new_count} new, {updated_count} updated")
 
         # 4. Sync to Google Calendar
         try:

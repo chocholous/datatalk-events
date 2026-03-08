@@ -73,15 +73,15 @@ def sync_events_to_google_calendar(events: list[Event]) -> int:
             service.events().update(
                 calendarId=calendar_id, eventId=existing_id, body=body
             ).execute()
-            log.debug(f"Updated GCal event: {event.title}")
+            log.warning(f"Updated GCal event: {event.title}")
         else:
             service.events().insert(
                 calendarId=calendar_id, body=body
             ).execute()
-            log.debug(f"Created GCal event: {event.title}")
+            log.warning(f"Created GCal event: {event.title}")
         synced += 1
 
-    log.info(f"Synced {synced} events to Google Calendar")
+    log.warning(f"Synced {synced} events to Google Calendar")
     return synced
 
 

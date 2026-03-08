@@ -38,7 +38,13 @@ class DetailFetcher:
         settings = get_settings()
         sem = asyncio.Semaphore(settings.scrape_detail_concurrency)
         async with httpx.AsyncClient(
-            timeout=settings.scrape_detail_timeout, follow_redirects=True
+            timeout=settings.scrape_detail_timeout,
+            follow_redirects=True,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9,cs;q=0.8",
+            },
         ) as client:
             tasks = [self._fetch_single(event, sem, client) for event in events]
             return await asyncio.gather(*tasks)

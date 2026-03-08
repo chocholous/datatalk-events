@@ -1,40 +1,33 @@
-import httpx
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from app.scraper import Scraper
 
-# Primary format: datatalk.cz <li><strong><a> structure
-SAMPLE_HTML_PRIMARY = """
-<html>
-<body>
-<ul>
-<li><strong><a href="https://example.com/event1">AI Meetup Prague</a></strong>(úterý 15. března, Praha)</li>
-<li><strong><a href="https://example.com/event2">Data Engineering Workshop</a></strong>(10. dubna, Brno)</li>
-<li><a href="/about">About us</a></li>
-</ul>
-</body>
-</html>
+# Markdown format from Apify RAG browser
+SAMPLE_MARKDOWN = """DATA talk Kalendář
+
+# Kalendář datových akcí
+
+*   **[AI Meetup Prague](https://example.com/event1)** (úterý 15. března, Praha)
+*   **[Data Engineering Workshop](https://example.com/event2)** (10. dubna, Brno)
+*   **[Machine Learning Prague 2026](https://www.mlprague.com/)** (4.–6. května, Praha)
 """
 
-# Fallback format: generic article cards
-SAMPLE_HTML_FALLBACK = """
-<html>
-<body>
-<article>
-    <h2><a href="https://example.com/evt1">Fallback Event</a></h2>
-    <p>Some description.</p>
-</article>
-</body>
-</html>
+SAMPLE_MARKDOWN_EMPTY = """DATA talk Kalendář
+
+# Kalendář datových akcí
+
+No events found.
 """
 
 
 class TestParseEvents:
-    def test_parse_events_primary_format(self):
+    def test_parse_events_from_markdown(self):
         scraper = Scraper()
-        events = scraper.parse_events(SAMPLE_HTML_PRIMARY)
+        events = scraper.parse_events(SAMPLE_MARKDOWN)
 
-        assert len(events) == 2
+        assert len(events) == 3
 
         assert events[0]["title"] == "AI Meetup Prague"
         assert events[0]["url"] == "https://example.com/event1"
@@ -45,49 +38,36 @@ class TestParseEvents:
         assert events[1]["url"] == "https://example.com/event2"
         assert events[1]["date_text"] == "10. dubna, Brno"
 
-    def test_parse_events_fallback_format(self):
-        scraper = Scraper()
-        events = scraper.parse_events(SAMPLE_HTML_FALLBACK)
+        assert events[2]["title"] == "Machine Learning Prague 2026"
+        assert events[2]["url"] == "https://www.mlprague.com/"
 
-        assert len(events) == 1
-        assert events[0]["title"] == "Fallback Event"
-        assert events[0]["url"] == "https://example.com/evt1"
-
-    def test_parse_events_empty_html(self):
+    def test_parse_events_empty_markdown(self):
         scraper = Scraper()
-        events = scraper.parse_events("<html><body></body></html>")
+        events = scraper.parse_events(SAMPLE_MARKDOWN_EMPTY)
         assert events == []
 
-    def test_parse_events_skips_relative_navigation_links(self):
-        html = """
-        <html><body>
-        <ul>
-        <li><strong><a href="/about">About</a></strong></li>
-        <li><strong><a href="https://example.com/real">Real Event</a></strong>(date, place)</li>
-        </ul>
-        </body></html>
-        """
+    def test_parse_events_empty_string(self):
         scraper = Scraper()
-        events = scraper.parse_events(html)
-        assert len(events) == 1
-        assert events[0]["title"] == "Real Event"
+        events = scraper.parse_events("")
+        assert events == []
 
 
-class TestFetchPage:
+class TestScrape:
     @pytest.mark.anyio
-    async def test_fetch_page_retries_on_500(self, respx_mock):
-        """Mock httpx to fail twice with 500, then succeed on third attempt."""
-        url = "https://example.com/events"
+    async def test_scrape_calls_rag_search(self):
+        rag_results = [{"markdown": SAMPLE_MARKDOWN}]
 
-        route = respx_mock.get(url)
-        route.side_effect = [
-            httpx.Response(500),
-            httpx.Response(500),
-            httpx.Response(200, text="<html>OK</html>"),
-        ]
+        with patch("app.scraper.rag_search", new_callable=AsyncMock, return_value=rag_results):
+            scraper = Scraper()
+            events = await scraper.scrape()
 
-        scraper = Scraper()
-        result = await scraper.fetch_page(url)
+        assert len(events) == 3
+        assert events[0]["title"] == "AI Meetup Prague"
 
-        assert result == "<html>OK</html>"
-        assert route.call_count == 3
+    @pytest.mark.anyio
+    async def test_scrape_returns_empty_on_failure(self):
+        with patch("app.scraper.rag_search", new_callable=AsyncMock, return_value=[]):
+            scraper = Scraper()
+            events = await scraper.scrape()
+
+        assert events == []

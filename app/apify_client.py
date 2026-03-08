@@ -65,7 +65,7 @@ async def crawl_urls(
                 json=input_data,
             )
             resp.raise_for_status()
-            run_data = resp.json()
+            run_data = resp.json().get("data", resp.json())
 
             dataset_id = run_data.get("defaultDatasetId")
             if not dataset_id:
@@ -116,7 +116,7 @@ async def rag_search(query: str, *, max_results: int = 3, timeout: int = 120) ->
                 },
             )
             resp.raise_for_status()
-            run_data = resp.json()
+            run_data = resp.json().get("data", resp.json())
 
             dataset_id = run_data.get("defaultDatasetId")
             if not dataset_id:

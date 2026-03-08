@@ -22,10 +22,49 @@ def _get_service():
     return build("calendar", "v3", credentials=creds)
 
 
+def _format_agenda_item(item: dict) -> str:
+    line = ""
+    if item.get("time"):
+        line += f"{item['time']}  "
+    line += item.get("title", "")
+    speaker = item.get("speaker")
+    speakers = item.get("speakers")
+    if speaker:
+        line += f" – {speaker}"
+    elif speakers:
+        line += f" – {', '.join(speakers)}"
+    return line
+
+
+def _build_description(event: Event) -> str:
+    parts = []
+    agenda = json.loads(event.agenda) if event.agenda else []
+    speakers = json.loads(event.speakers) if event.speakers else []
+    topics = json.loads(event.topics) if event.topics else []
+    if agenda:
+        lines = [_format_agenda_item(item) for item in agenda]
+        parts.append("Program:\n" + "\n".join(f"• {line}" for line in lines))
+    elif speakers:
+        parts.append(f"Řečníci: {', '.join(speakers)}")
+    if event.organizer:
+        parts.append(f"Organizátor: {event.organizer}")
+    if event.event_type:
+        parts.append(f"Typ: {event.event_type}")
+    if event.language:
+        parts.append(f"Jazyk: {event.language}")
+    if topics:
+        parts.append(f"Témata: {', '.join(topics)}")
+    if event.description:
+        parts.append(f"\n{event.description}")
+    if event.url:
+        parts.append(f"\n{event.url}")
+    return "\n".join(parts)
+
+
 def _event_to_gcal_body(event: Event) -> dict:
     body: dict = {
         "summary": event.title,
-        "description": event.description or "",
+        "description": _build_description(event),
         "source": {"url": event.url, "title": event.title},
         "extendedProperties": {
             "private": {"datatalk_external_id": event.external_id}

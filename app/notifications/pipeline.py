@@ -68,6 +68,7 @@ async def run_scrape_and_sync(session: Session) -> None:
 
             topics = json.dumps(_ensure_list(e.get("topics", [])))
             speakers = json.dumps(_ensure_list(e.get("speakers", [])))
+            agenda = json.dumps(_ensure_list(e.get("agenda", [])))
             organizer = _ensure_str_or_none(e.get("organizer"))
 
             existing = session.exec(
@@ -85,6 +86,7 @@ async def run_scrape_and_sync(session: Session) -> None:
                 existing.event_type = e.get("type")
                 existing.language = e.get("language")
                 existing.speakers = speakers
+                existing.agenda = agenda
                 existing.organizer = organizer
                 existing.image_url = e.get("image_url")
                 existing.scraped_at = datetime.utcnow()
@@ -103,6 +105,7 @@ async def run_scrape_and_sync(session: Session) -> None:
                     event_type=e.get("type"),
                     language=e.get("language"),
                     speakers=speakers,
+                    agenda=agenda,
                     organizer=organizer,
                     image_url=e.get("image_url"),
                 )
@@ -153,11 +156,14 @@ async def send_event_reminders(session: Session) -> None:
         return
 
     telegram = TelegramNotifier()
-    text = format_event_reminder(list(upcoming))
-    if await telegram.send_to_channel(text):
-        for event in upcoming:
+    sent_count = 0
+    for event in upcoming:
+        text = format_event_reminder([event])
+        if await telegram.send_to_channel(text, photo_url=event.image_url):
             event.reminder_sent = True
-        session.commit()
-        log.info(f"Sent reminder for {len(upcoming)} events starting in ~2h")
-    else:
-        log.warning("Failed to send reminder to channel")
+            sent_count += 1
+        else:
+            log.warning(f"Failed to send reminder for: {event.title}")
+    session.commit()
+    if sent_count:
+        log.info(f"Sent reminder for {sent_count} events starting in ~2h")

@@ -45,6 +45,13 @@ Return a JSON array with objects containing:
 - speakers: array of speaker names (strings)
 - organizer: string or null
 - image_url: string URL or null
+- agenda: array of program items (max 5 most important items, prefer keynotes and main talks over breaks/networking). Each item is an object with ALL fields optional except title:
+  - time: string (e.g. "18:00") or null
+  - title: string (name of talk/session/activity)
+  - speaker: string or null (single speaker name)
+  - speakers: array of strings or null (for panels with multiple speakers)
+  - type: "talk" | "keynote" | "workshop" | "panel" | "break" | "other" or null
+  Include EVERYTHING you find in the program — talks, panels, workshops, networking, breaks. Fill in only what is available, do not invent missing data.
 
 Events to analyze:
 {events}

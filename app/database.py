@@ -40,6 +40,10 @@ def migrate_db(engine):
                     "ALTER TABLE event ADD COLUMN reminder_sent BOOLEAN DEFAULT 0"
                 )
             )
+        if "agenda" not in columns:
+            conn.execute(
+                sqlalchemy.text('ALTER TABLE event ADD COLUMN agenda TEXT DEFAULT "[]"')
+            )
 
 
 def get_session(engine) -> Generator[Session, None, None]:

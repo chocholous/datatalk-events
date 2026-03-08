@@ -17,6 +17,7 @@ class Event(SQLModel, table=True):
     event_type: str | None = None
     language: str | None = None
     speakers: str = "[]"  # JSON array of speaker names
+    agenda: str = "[]"  # JSON array of program items
     organizer: str | None = None
     image_url: str | None = None
     reminder_sent: bool = False

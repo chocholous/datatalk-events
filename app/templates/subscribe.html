@@ -28,16 +28,14 @@
             -moz-osx-font-smoothing: grayscale;
             text-rendering: geometricPrecision;
             line-height: 1.5;
-            color: #000;
-            background: #fff;
+            color: #fff;
+            background: #000;
         }
-        h1, h2, h3, label, button, .brand, .cal-btn { font-family: 'Right Grotesk', system-ui, sans-serif; }
+        h1, h2, h3, .brand, .cta-btn { font-family: 'Right Grotesk', system-ui, sans-serif; }
         a { color: inherit; }
 
-        /* ── Header (identical to datatalk.cz) ── */
-        header {
-            border-bottom: 1px solid #f0f0f0;
-        }
+        /* ── Header ── */
+        header { border-bottom: 1px solid #1a1a1a; }
         .header-inner {
             max-width: 960px;
             margin: 0 auto;
@@ -50,87 +48,77 @@
             font-size: clamp(1rem, 4vw, 1.5rem);
             font-weight: 700;
             text-decoration: none;
-            color: #000;
+            color: #fff;
         }
         nav a {
             font-family: 'Right Grotesk', system-ui, sans-serif;
             font-weight: 300;
             text-decoration: none;
-            color: #000;
-            position: relative;
+            color: #888;
             margin-left: 1.5rem;
             font-size: 0.95rem;
+            transition: color 0.2s;
         }
-        nav a::after {
-            content: '';
-            position: absolute;
-            bottom: -2px;
-            left: 0;
-            width: 100%;
-            height: 1.5px;
-            background: #000;
-            transform: scaleX(0);
-            transform-origin: center;
-            transition: transform 0.25s cubic-bezier(.5,.75,.75,1.25);
-        }
-        nav a:hover::after { transform: scaleX(1); }
-        nav a:hover { color: #666; }
+        nav a:hover { color: #fff; }
 
         /* ── Hero ── */
         .hero {
-            background: #000;
-            color: #fff;
-            padding: clamp(4rem, 12vw, 8rem) 1.5rem clamp(3rem, 8vw, 5rem);
+            padding: clamp(4rem, 14vw, 10rem) 1.5rem clamp(3rem, 8vw, 5rem);
+            text-align: center;
         }
         .hero-inner {
-            max-width: 960px;
+            max-width: 720px;
             margin: 0 auto;
-            display: grid;
-            gap: 2rem;
         }
-        @media (min-width: 640px) {
-            .hero-inner { grid-template-columns: 1fr 1fr; align-items: center; }
+        .hero-logo {
+            width: clamp(80px, 20vw, 140px);
+            height: auto;
+            margin-bottom: 2rem;
         }
         .hero h1 {
-            font-size: clamp(2.5rem, 10vw, 4.5rem);
+            font-size: clamp(2.5rem, 10vw, 5rem);
             font-weight: 800;
-            line-height: 0.92;
-            letter-spacing: -0.035em;
-        }
-        .hero h1 span { font-weight: 200; }
-        .hero-right p {
-            font-weight: 300;
-            font-size: clamp(0.95rem, 2.5vw, 1.15rem);
-            opacity: 0.65;
-            max-width: 36ch;
+            line-height: 0.9;
+            letter-spacing: -0.04em;
             margin-bottom: 1.5rem;
         }
-        .cal-btn {
+        .hero h1 span { font-weight: 200; opacity: 0.5; }
+        .hero p {
+            font-weight: 300;
+            font-size: clamp(0.95rem, 2.5vw, 1.15rem);
+            opacity: 0.45;
+            max-width: 42ch;
+            margin: 0 auto 2.5rem;
+        }
+        .cta-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            justify-content: center;
+        }
+        .cta-btn {
             display: inline-flex;
             align-items: center;
             gap: 0.6rem;
-            background: #fff;
-            color: #000;
             text-decoration: none;
-            padding: 0.8rem 1.6rem;
+            padding: 0.85rem 1.8rem;
             font-weight: 700;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             letter-spacing: -0.01em;
             transition: transform 0.15s, opacity 0.15s;
         }
-        .cal-btn:hover { transform: translateY(-1px); opacity: 0.9; color: #000; }
-        .cal-btn svg { flex-shrink: 0; }
+        .cta-btn:hover { transform: translateY(-1px); opacity: 0.85; }
+        .cta-btn svg { flex-shrink: 0; }
+        .cta-primary { background: #fff; color: #000; }
+        .cta-secondary { background: transparent; color: #fff; border: 1px solid #333; }
+        .cta-secondary:hover { border-color: #666; color: #fff; }
 
-        /* ── Main content ── */
+        /* ── Content ── */
         .content {
             max-width: 960px;
             margin: 0 auto;
             padding: clamp(2rem, 6vw, 4rem) 1.5rem;
-            display: grid;
-            gap: clamp(3rem, 6vw, 5rem);
         }
-
-        /* ── Section headings ── */
         section h2 {
             font-size: clamp(1.3rem, 4vw, 1.75rem);
             font-weight: 700;
@@ -138,77 +126,20 @@
             margin-bottom: 0.15rem;
         }
         .sub {
-            color: #888;
+            color: #555;
             font-size: 0.9rem;
             font-weight: 300;
             margin-bottom: 1.5rem;
         }
 
-        /* ── Subscribe form ── */
-        .form-grid {
-            display: grid;
-            gap: 0.75rem;
-            margin-bottom: 1rem;
-        }
-        @media (min-width: 480px) {
-            .form-grid { grid-template-columns: 1fr 1fr; }
-        }
-        .field label {
-            display: block;
-            font-size: 0.7rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            color: #666;
-            margin-bottom: 0.3rem;
-        }
-        .field input {
-            width: 100%;
-            padding: 0.65rem 0;
-            border: none;
-            border-bottom: 1.5px solid #e0e0e0;
-            background: transparent;
-            color: #000;
-            font: inherit;
-            font-size: 1rem;
-            transition: border-color 0.2s;
-            outline: none;
-        }
-        .field input:focus { border-color: #000; }
-        .field input::placeholder { color: #ccc; }
-        .field small { display: block; margin-top: 0.25rem; font-size: 0.72rem; color: #aaa; }
-        .submit-btn {
-            display: block;
-            width: 100%;
-            padding: 0.85rem;
-            background: #000;
-            color: #fff;
-            border: none;
-            font-size: 0.85rem;
-            font-weight: 700;
-            letter-spacing: 0.03em;
-            text-transform: uppercase;
-            cursor: pointer;
-            transition: opacity 0.15s;
-        }
-        .submit-btn:hover { opacity: 0.8; }
-
-        /* ── Alert ── */
-        .alert { padding: 0.7rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
-        .alert-ok { background: #e8f5e9; color: #2e7d32; }
-        .alert-err { background: #fce4ec; color: #c62828; }
-
         /* ── Events list ── */
-        .events-grid {
-            display: grid;
-            gap: 0;
-        }
+        .events-grid { display: grid; gap: 0; }
         .ev {
             display: grid;
-            grid-template-columns: 4rem 1fr;
+            grid-template-columns: 4.5rem 1fr;
             gap: 1.25rem;
             padding: 1.25rem 0;
-            border-bottom: 1px solid #f0f0f0;
+            border-bottom: 1px solid #1a1a1a;
             align-items: start;
         }
         .ev:first-child { padding-top: 0; }
@@ -220,17 +151,18 @@
         }
         .ev-date .d {
             font-family: 'Right Grotesk', system-ui, sans-serif;
-            font-size: 2rem;
+            font-size: 2.2rem;
             font-weight: 800;
             letter-spacing: -0.04em;
             display: block;
+            color: #fff;
         }
         .ev-date .m {
             font-size: 0.65rem;
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.1em;
-            color: #999;
+            color: #555;
             display: block;
         }
         .ev h3 {
@@ -239,14 +171,11 @@
             letter-spacing: -0.015em;
             line-height: 1.3;
         }
-        .ev h3 a {
-            text-decoration: none;
-            transition: opacity 0.15s;
-        }
+        .ev h3 a { text-decoration: none; transition: opacity 0.15s; }
         .ev h3 a:hover { opacity: 0.5; }
         .ev .meta {
             font-size: 0.8rem;
-            color: #999;
+            color: #555;
             font-weight: 300;
             margin-top: 0.1rem;
         }
@@ -256,28 +185,37 @@
             margin-top: 0.25rem;
             line-height: 1.5;
         }
+        .ev .tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            margin-top: 0.4rem;
+        }
+        .tag {
+            font-size: 0.65rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 0.2rem 0.5rem;
+            border: 1px solid #333;
+            color: #888;
+        }
 
         /* ── Footer ── */
         footer {
-            border-top: 1px solid #f0f0f0;
-            padding: 2rem 1.5rem;
+            border-top: 1px solid #1a1a1a;
+            padding: 2.5rem 1.5rem;
             text-align: center;
         }
         .footer-inner {
             max-width: 960px;
             margin: 0 auto;
             font-size: 0.75rem;
-            color: #bbb;
+            color: #444;
         }
-        .footer-inner a {
-            color: #bbb;
-            text-decoration: none;
-            font-weight: 300;
-        }
-        .footer-inner a:hover { color: #666; }
+        .footer-inner a { color: #444; text-decoration: none; font-weight: 300; }
+        .footer-inner a:hover { color: #888; }
         .footer-inner span { margin: 0 0.4rem; }
-
-        #result { display: none; }
     </style>
 </head>
 <body>
@@ -295,15 +233,20 @@
 
     <div class="hero">
         <div class="hero-inner">
-            <div>
-                <h1>Kalendar<br>data <span>akci</span></h1>
-            </div>
-            <div class="hero-right">
-                <p>Vsechny data & tech eventy v Cesku a na Slovensku na jednom miste. Pridej si kalendar, pripomeneme ti.</p>
+            <img src="/static/logo.jpg" alt="DATA talk" class="hero-logo">
+            <h1>Kalendar<br>data <span>akci</span></h1>
+            <p>Vsechny data & tech eventy v Cesku a na Slovensku na jednom miste. Pridej si kalendar, pripomeneme ti.</p>
+            <div class="cta-row">
                 {% if calendar_link %}
-                <a href="{{ calendar_link }}" class="cal-btn" target="_blank">
+                <a href="{{ calendar_link }}" class="cta-btn cta-primary" target="_blank">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                     Pridat do Google Calendar
+                </a>
+                {% endif %}
+                {% if telegram_link %}
+                <a href="{{ telegram_link }}" class="cta-btn cta-secondary" target="_blank">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+                    Telegram kanal
                 </a>
                 {% endif %}
             </div>
@@ -311,26 +254,6 @@
     </div>
 
     <div class="content">
-        <section>
-            <h2>Odber</h2>
-            <p class="sub">Po overeni ti posleme odkaz na kalendar. 2 hodiny pred kazdou akci dostanes pripominku na Telegram.</p>
-            <div id="result"></div>
-            <form id="sf">
-                <div class="form-grid">
-                    <div class="field">
-                        <label for="email">Email</label>
-                        <input type="email" id="email" required placeholder="tvuj@email.cz">
-                    </div>
-                    <div class="field">
-                        <label for="tg">Telegram Chat ID</label>
-                        <input type="text" id="tg" placeholder="volitelne">
-                        <small>Napis @datamesh_chocho_bot /start</small>
-                    </div>
-                </div>
-                <button type="submit" class="submit-btn">Odebrat</button>
-            </form>
-        </section>
-
         {% if events %}
         <section>
             <h2>Nadchazejici akce</h2>
@@ -347,10 +270,10 @@
                     <div>
                         <h3><a href="{{ event.url }}" target="_blank">{{ event.title }}</a></h3>
                         <div class="meta">
-                            {% if event.date %}{{ event.date.strftime('%H:%M') }}{% endif %}{% if event.location %} · {{ event.location }}{% endif %}
+                            {% if event.date %}{{ event.date.strftime('%H:%M') }}{% endif %}{% if event.location %} · {{ event.location }}{% endif %}{% if event.event_type %} · {{ event.event_type }}{% endif %}
                         </div>
                         {% if event.description %}
-                        <p class="desc">{{ event.description[:100] }}{% if event.description|length > 100 %}…{% endif %}</p>
+                        <p class="desc">{{ event.description[:120] }}{% if event.description|length > 120 %}...{% endif %}</p>
                         {% endif %}
                     </div>
                 </div>
@@ -369,26 +292,5 @@
             <a href="https://dataday.cz">DATA day</a>
         </div>
     </footer>
-
-    <script>
-    document.getElementById('sf').addEventListener('submit', async e => {
-        e.preventDefault();
-        const r = document.getElementById('result');
-        try {
-            const resp = await fetch('/subscribe', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    email: document.getElementById('email').value,
-                    telegram_chat_id: document.getElementById('tg').value || null
-                }),
-            });
-            const d = await resp.json();
-            r.className = resp.ok ? 'alert alert-ok' : 'alert alert-err';
-            r.textContent = resp.ok ? 'Overovaci email odeslan! Zkontroluj schranku.' : (d.detail || 'Neco se pokazilo.');
-        } catch { r.className = 'alert alert-err'; r.textContent = 'Chyba pripojeni.'; }
-        r.style.display = 'block';
-    });
-    </script>
 </body>
 </html>
